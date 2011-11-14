@@ -27,7 +27,7 @@ class HttpClient
         string _domain;
         string _url;
         
-        ushort _httpVersion;
+        ushort _httpVersion = 1;
         
         ushort _port = 80;
     }
@@ -83,15 +83,28 @@ class HttpClient
         _ss = new SocketStream(_sock);
     }
     
+    void close()
+    {
+        _ss.close();
+    }
+    
     // Returns raw headers for now
     /*HttpResponse*/ string[] response()
     {
-        _ss.writeString( to!string(_method) ~ " " ~
-                        _url ~ ["HTTP/1.0", "HTTP/1.1"][_httpVersion] ~
-                       "Host: " ~ _domain ~ "\r\n"
-                       "\r\n");
+        _ss.writeString( buildRequest() );
         
         return getHeaders();
+    }
+    
+    string buildRequest()
+    {
+        string request;
+        
+        request ~= to!string(_method) ~ " ";
+        request ~= _url ~ " " ~ ["HTTP/1.0", "HTTP/1.1"][_httpVersion];
+        request ~= "\r\nHost: " ~ _domain ~ "\r\n\r\n";
+        return request;
+                       
     }
     
     protected string[] getHeaders()
@@ -138,6 +151,10 @@ version(Main)
     {
         auto http = new Http("http://google.com/");
         http.open;
+        
+        scope(exit) http.close;
+        
+        //writeln(http.buildRequest);
         foreach(header; http.response)
             writeln(header);
     }
