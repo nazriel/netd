@@ -1,7 +1,7 @@
 /**
  * HTTP package 
  */
-module net.http;
+module std.net.http;
 
 /*
  * TODO:
@@ -361,7 +361,7 @@ class HttpClient
 	}
     
     /**
-     * Slits URL into domain, port and URL
+     * Splits URL into domain, port and URL
      * 
      * Params:
      * 	url	=	URL to "parse"     
