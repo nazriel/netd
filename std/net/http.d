@@ -1,17 +1,40 @@
+/**
+ * HTTP package 
+ */
 module net.http;
 
-import std.socket, std.socketstream;
-import std.string, std.conv, std.traits;
+/*
+ * TODO:
+ *  - Rebuild? HttpHeaders class
+ */
+
+import std.socket 		: Socket, TcpSocket, InternetAddress;
+import std.socketstream : SocketStream;
+import std.string 		: strip, toLower, indexOf;
+import std.conv 		: to;
+import std.traits 		: isSomeString;
 
 // debug
 import std.stdio;
 
-enum HttpMethod : string
+
+/**
+ * HTTP request method
+ */
+enum RequestMethod : string
 {
-    Get = "GET",
-    Post = "POST"
+    Get 	= "GET",
+    Post 	= "POST",
+    Put		= "PUT",
+    Trace	= "TRACE",
+    Head	= "HEAD",
+    Options	= "OPTIONS",
+    Connect = "CONNECT"
 }
 
+/**
+ * HTTP headers list
+ */
 public enum HttpHeader : string
 {       
     Accept            = "Accept",
@@ -69,7 +92,58 @@ public enum HttpHeader : string
     Todo              = "TODO",
 }
 
+enum HttpResponseCode : ushort
+{
+    Continue                    = 100,
+    SwitchingProtocols          = 101,
+    
+    OK                          = 200,
+    Created                     = 201,
+    Accepted                    = 202,
+    NonAuthoritativeInformation = 203,
+    NoContent                   = 204,
+    ResetContent                = 205,
+    PartialContent              = 206,
+    
+    MultipleChoies              = 300,
+    MovedPermanently            = 301,
+    Found                       = 302,
+    SeeOther                    = 303,
+    NotModified                 = 304,
+    UseProxy                    = 305,
+    TemponaryRedirect           = 307,
+    
+    BadRequest                  = 400,
+    Unauthorized                = 401,
+    PaymentRequired             = 402,
+    Forbidden                   = 403,
+    NotFound                    = 404,
+    MethodNotAllowed            = 405,
+    NotAcceptable               = 406,
+    ProxyAuthenticationRequired = 407,
+    RequestTimeout              = 408,
+    Conflict                    = 409,
+    Gone                        = 410,
+    LengthRequired              = 411,
+    PreconditionFailed          = 412,
+    RequestEntityTooLarge       = 413,
+    RequestURITooLarge          = 414,
+    UnsupportedMediaType        = 415,
+    RequestedRangeNotSatisfiable= 416,
+    ExpectationFailed           = 417,
+    
+    InternalServerError         = 500,
+    NotImplemented              = 501,
+    BadGateway                  = 502,
+    ServiceUnavaible            = 503,
+    GatewayTimeout              = 504,
+    VersionNotSupported         = 505
+       
+}
 
+/**
+ * Represents single HTTP header
+ */
 struct Header
 {
     HttpHeader name;
@@ -82,11 +156,11 @@ class Headers
 
     void set(K : HttpHeader, V)(K name, V value)
     {
-        add(name, to!(string)(value));
+        add(name, to!string(value));
     }
     
     void set(K, V)(K name, V value)
-    if ( isSomeString!K )
+		if ( isSomeString!K )
     {
         string key = cast(string) toLower(name);
 
@@ -198,6 +272,7 @@ class Headers
             {
                 set(line[0..pos], line[pos..$]);
             }
+                
         }
     }
     private 
@@ -206,47 +281,92 @@ class Headers
     }
 }
 
+/**
+ * HTTP client class 
+ */
 alias HttpClient Http;
+
+/// ditto
 class HttpClient
 {
-    private
-    {
+    protected
+    {		
         Socket _sock;
+        SocketStream _ss;        
+        RequestMethod _method;
         
-        SocketStream _ss;
-        
-        HttpMethod _method;
-        
+        /// Domain to connect to
         string _domain;
+        
+        /// Request URL
         string _url;
         
+        /// Page contents
+        string _content;
+        
+        /// HTTP protocol version
         ushort _httpVersion = 1;
         
+        /// Port to connect on
         ushort _port = 80;
+        
+        /// Server response headers
         Headers _responseHeaders;
+        
+        /// Server request headers
         Headers _requestHeaders;
     }
     
-    this(string url, HttpMethod method = HttpMethod.Get)
+    /**
+     * Creates new HTTPClient object from URL
+     * 
+     * Params:
+     * 	url	=	Web site URL, http(s):// can be omitted
+     * 	method	=	Request method
+     * 
+     * Example:
+     * --------
+     * auto http = new Http("http://localhost:6666/");
+     * --------
+     */
+    this(string url, RequestMethod method = RequestMethod.Get)
     {
         parseUrl(url);
         _method = method;
         _responseHeaders = new Headers();
-        _requestHeaders  = new Headers();
-        
+        _requestHeaders  = new Headers();        
     }
     
-    Headers responseHeaders()
+    /**
+     * Creates new HTTPClient object from domain, port and url
+     * 
+     * Params:
+     * 	domain	=	Domain to connect to
+     * 	port	=	Port to connect on
+     * 	url		=	URL to send request to
+     * 
+     * Example:
+     * --------
+     * auto http = new Http("google.com", 80);
+     * --------
+     */
+    this(string domain, ushort port, string url = "/", RequestMethod method = RequestMethod.Get)
     {
-        return _responseHeaders;
-    }
-
-    Headers requestHeaders()
-    {
-        return _requestHeaders;
-    }
-
-    void parseUrl(string url)
+		_domain = domain;
+		_port = port;
+		_url = url;
+		_method = method;
+        _responseHeaders = new Headers();
+        _requestHeaders  = new Headers();
+	}
+    
+    /**
+     * Slits URL into domain, port and URL
+     * 
+     * Params:
+     * 	url	=	URL to "parse"     
+     */
+    protected void parseUrl(string url)
     {
         size_t offset;
         
@@ -285,32 +405,49 @@ class HttpClient
         }
     }
     
+    /**
+     * Opens connection to server
+     */
     void open()
     {
         _sock = new TcpSocket(new InternetAddress(_domain, _port));
         _ss = new SocketStream(_sock);
-        response();
     }
     
+    /**
+     * Closes connection
+     */
     void close()
     {
         _ss.close();
     }
     
-    // Returns raw headers for now
-    string[] response()
+    /**
+     * Sends request to the server
+     */
+    void send()
     {
         _ss.writeString( buildRequest() );
-        
-        return getHeaders();
+        getResponse();
     }
     
+    /**
+     * Creates request
+     * 
+     * Returns:
+     * 	Request
+     */
     string buildRequest()
     {
         string request;
   
+		/// HTTP method
         request ~= to!string(_method) ~ " ";
+        
+        /// URL and Protocol version
         request ~= _url ~ " " ~ ["HTTP/1.0", "HTTP/1.1"][_httpVersion];
+        
+        /// Host
         request ~= "\r\nHost: " ~ _domain ~ "\r\n";
         
         foreach ( currentHeader; requestHeaders() )
@@ -320,55 +457,105 @@ class HttpClient
         
         request ~= "\r\n";
 
-        return request;
-                       
+        return request;                       
     }
     
-    protected string[] getHeaders()
+    /**
+     * Gets server response: headers and content
+     */    
+    protected void getResponse()
     {
+		/// Headers
         responseHeaders.parseStream(_ss);
-        /*
+        
+        /// Content
         char[] line;
-        string[] headers;
-        for(;;)
+        uint l;
+        
+        if( !_responseHeaders.exist(HttpHeader.ContentLength) )
+            return;
+        
+        int length = to!int(_responseHeaders[HttpHeader.ContentLength].strip);
+        while(!_ss.eof())
         {
-            line = _ss.readLine();
+            line = cast(char[])_ss.readLine();
+            l += line.length + 2;
+            _content ~= line;
             
-            if(line.length == 0)
+            if(l >= length)
                 break;
-            
-            headers ~= line.idup;   
         }
-        */
-        return [""];
     }
     
-    HttpMethod method() const
+    /**
+     * Returns: Page content, empty if no content specified
+     */
+    string content() const
+    {
+        return _content;
+    }    
+    
+    /**
+     * Returns: Request method
+     */
+    RequestMethod method() const
     {
         return _method;
     }
     
-    void method(HttpMethod method)
+    /**
+     * Sets HTTP request method
+     * 
+     * Params:
+     * 	method = Request method
+     */
+    void method(RequestMethod method)
     {
         _method = method;
     }
     
+    /**
+     * Returns: HTTP version
+     */
     ushort httpVersion() const
     {
         return _httpVersion;
     }
     
+    /**
+     * Sets HTTP version
+     * 
+     * Params:
+     * 	ver =	HTTP version, 0 - HTTP/1.0, 1 - HTTP/1.1
+     */
     void httpVersion(ushort ver)
     {
         _httpVersion = ver ? 1 : 0;
     }
+    
+    /**
+     * Returns: response headers
+     */
+    Headers responseHeaders()
+    {
+        return _responseHeaders;
+    }
+
+	/**
+	 * Returns: request headers
+	 */
+    Headers requestHeaders()
+    {
+        return _requestHeaders;
+    }
 }
+
 
 debug(Http)
 {
     void main()
     {
-        auto http = new Http("http://google.com/");
+        auto http = new Http("http://www.google.pl/");
         http.requestHeaders().set(HttpHeader.AcceptCharset, "UTF-8,*");
         
         writeln("\nRequest headers are: ");
@@ -377,7 +564,8 @@ debug(Http)
             writeln("Name: ", header.name, " -> Value: ", header.value);
         }
 
-        http.open();
+        http.open;
+        http.send;
         
         scope(exit) http.close();
         
@@ -386,5 +574,8 @@ debug(Http)
         {
             writeln("Name: ", header.name, " -> Value: ", header.value);
         }
+        
+        writeln("\nPage content:");
+        writeln(http.content);
     }
 }
