@@ -40,10 +40,10 @@ struct UriQuery
     /**
      * Array of params
      */
-    QueryParam[] params;
+    QueryParam[255] params;
     
     /**
-     * Returns QueryParam with specified name
+     * Returns query param value with specified name
      * 
      * Params:
      *  name    =   Query param name
@@ -52,21 +52,49 @@ struct UriQuery
      *  Exception if not exists
      * 
      * Return:
-     *  QueryParam
+     *  String with contents
      */
-    QueryParam opIndex(string name)
+    string opIndex(string name)
     {
         foreach(param; params)
         {
             if(param.name == name)
-                return param;
+                return param.value;
         }
         
         throw new Exception("Param with name '"~name~"' does not exists");
     }
     
+    int length()
+    {
+        return params.length;
+    }
+    
+    /**
+     * Returns QueryParam with specified index
+     * 
+     * Params:
+     *  i   =   Query param index
+     * 
+     * Returns:
+     *  QueryParam
+     * 
+     * Throws:
+     *  Exception if index is out of bounds
+     */
+    QueryParam opIndex(int i)
+    {
+        if(i >= parmas.length)
+            throw new Exception("Trying to get index that does not exits");
+        
+        return params[i];
+    }
+    
     /**
      * Adds new QueryParam
+     * 
+     * Params:
+     *  param   =   Param to add
      */
     void add(QueryParam param)
     {
@@ -521,6 +549,7 @@ debug(Uri)
         assert(uri.scheme() == uri.Scheme.Http);
         assert(uri.scheme() == Uri.Scheme.Http);
         assert(uri.scheme() == Uri.Http);
+        writeln(uri.query["q"]);
         
         writeln("Scheme:   ", uri.scheme);
         writeln("Username: ", uri.user);
