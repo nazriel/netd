@@ -1,3 +1,14 @@
+/**
+ * Uri parser
+ *
+ * Parse URI (Uniform Resource Identifiers) into parts described in RFC, based on tango.net.uri and GIO
+ *
+ * Authors: $(WEB github.com/robik, Robert 'Robik' Pasiński), $(WEB github.com/nazriel, Damian Ziemba)
+ * Copyright: Robert 'Robik' Pasiński, Damian Ziemba 2011
+ * License: $(WEB http://www.boost.org/users/license.html, Boost license)
+ *
+ * Source: $(REPO std/net/uri.d)
+ */
 module std.net.uri;
 
 import std.string : indexOf;
@@ -7,7 +18,7 @@ import std.array  : split;
 import std.stdio;
 
 
-/**
+/** 
  * Represents query parameter
  */
 struct QueryParam
