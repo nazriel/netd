@@ -41,6 +41,7 @@ struct UriQuery
      * Array of params
      */
     QueryParam[255] params;
+    size_t count = 0;
     
     /**
      * Returns query param value with specified name
@@ -84,7 +85,7 @@ struct UriQuery
      */
     QueryParam opIndex(int i)
     {
-        if(i >= parmas.length)
+        if(i >= params.length)
             throw new Exception("Trying to get index that does not exits");
         
         return params[i];
@@ -98,7 +99,7 @@ struct UriQuery
      */
     void add(QueryParam param)
     {
-        params ~= param;
+        params[count++] = param;
     }
 }
 
