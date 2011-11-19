@@ -1,0 +1,1 @@
+MODULES = $(MODULE std.net, Standard networking package)

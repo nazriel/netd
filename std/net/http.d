@@ -3,16 +3,12 @@
  */
 module std.net.http;
 
-/*
- * TODO:
- *  - Rebuild? HttpHeaders class
- */
-
 import std.socket 		: Socket, TcpSocket, InternetAddress;
 import std.socketstream : SocketStream;
 import std.string 		: strip, toLower, indexOf;
-import std.conv 		: to;
+import std.conv 		: to, parse;
 import std.traits 		: isSomeString;
+import std.net.uri;
 
 // debug
 import std.stdio;
@@ -26,6 +22,7 @@ enum RequestMethod : string
     Get 	= "GET",
     Post 	= "POST",
     Put		= "PUT",
+    Delete  = "DELETE",
     Trace	= "TRACE",
     Head	= "HEAD",
     Options	= "OPTIONS",
@@ -150,8 +147,15 @@ struct Header
     string value;
 }
 
+// TODO: rebuild?
 class Headers
 {
+    protected 
+    {
+        HttpResponseCode _code;
+        Header[] _headers;
+    }
+    
     this() {}
 
     void set(K : HttpHeader, V)(K name, V value)
@@ -162,11 +166,11 @@ class Headers
     void set(K, V)(K name, V value)
 		if ( isSomeString!K )
     {
-        string key = cast(string) toLower(name);
+        string key = cast(string) name;
 
         foreach (cur; __traits(allMembers, HttpHeader))
         {
-            if ( toLower(cur) == key )
+            if ( __traits(getMember, HttpHeader, cur) == key )
             {
                 add( cast(HttpHeader) cur, to!(string)(value) );
             }
@@ -177,7 +181,7 @@ class Headers
     {
         foreach (cur; __traits(allMembers, HttpHeader))
         {
-            if ( toLower(cur) == toLower(name) )
+            if ( __traits(getMember, HttpHeader, cur) == name )
             {
                 return cast(HttpHeader) cur;
             }
@@ -192,7 +196,7 @@ class Headers
     {
         foreach ( cur; _headers )
         {
-            if ( cur.name == name )
+            if ( cur.name == mixin("HttpHeader."~name) )
             {
                 return true;
             }
@@ -225,6 +229,11 @@ class Headers
         }
 
         return null;
+    }
+    
+    HttpResponseCode code()
+    {
+        return _code;
     }
 
     string opIndex(HttpHeader name)
@@ -269,16 +278,12 @@ class Headers
             pos = line.indexOf(':');
 
             if ( pos != -1)
-            {
-                set(line[0..pos], line[pos..$]);
-            }
-                
+                set(line[0..pos], line[pos+1..$].strip);
+            else if(line[0..4] == "HTTP")
+                _code = cast(HttpResponseCode)to!ushort(line[9..12]);
         }
     }
-    private 
-    {
-        Header[] _headers;
-    }
+    
 }
 
 /**
@@ -294,12 +299,7 @@ class HttpClient
         Socket _sock;
         SocketStream _ss;        
         RequestMethod _method;
-        
-        /// Domain to connect to
-        string _domain;
-        
-        /// Request URL
-        string _url;
+        Uri _uri;
         
         /// Page contents
         string _content;
@@ -307,15 +307,20 @@ class HttpClient
         /// HTTP protocol version
         ushort _httpVersion = 1;
         
-        /// Port to connect on
-        ushort _port = 80;
-        
         /// Server response headers
         Headers _responseHeaders;
         
         /// Server request headers
         Headers _requestHeaders;
     }
+    
+    
+    struct Options
+    {
+        bool FollowLocation = true;
+    }
+    Options options;
+    alias options this;
     
     /**
      * Creates new HTTPClient object from URL
@@ -329,9 +334,9 @@ class HttpClient
      * auto http = new Http("http://localhost:6666/");
      * --------
      */
-    this(string url, RequestMethod method = RequestMethod.Get)
+    this(Uri uri, RequestMethod method = RequestMethod.Get)
     {
-        parseUrl(url);
+        _uri = uri;
         _method = method;
         _responseHeaders = new Headers();
         _requestHeaders  = new Headers();        
@@ -350,67 +355,20 @@ class HttpClient
      * auto http = new Http("google.com", 80);
      * --------
      */
-    this(string domain, ushort port, string url = "/", RequestMethod method = RequestMethod.Get)
+    this(string uri, RequestMethod method = RequestMethod.Get)
     {
-		_domain = domain;
-		_port = port;
-		_url = url;
+		_uri = new Uri(uri);
 		_method = method;
         _responseHeaders = new Headers();
         _requestHeaders  = new Headers();
 	}
     
     /**
-     * Splits URL into domain, port and URL
-     * 
-     * Params:
-     * 	url	=	URL to "parse"     
-     */
-    protected void parseUrl(string url)
-    {
-        size_t offset;
-        
-        if(url[0..5] == "https")
-            _port = 443;
-        
-        // Remove http:// and https:// 
-        offset = indexOf(url, "://");
-        if(offset != -1)
-            url = url[offset + 3 .. $];
-        
-        // Remove Anchor href
-        offset = indexOf(url, "#");
-        if(offset != -1)
-            url = url[0 .. offset];
-        
-        // Split domain and url
-        offset = indexOf(url, "/");
-        if(offset == -1)
-        {
-            _domain = url;
-            _url = "/";
-        }
-        else
-        {
-            _domain = url[0 .. offset];
-            _url = url[offset .. $];
-        }
-        
-        // Get port
-        offset = indexOf(_domain, ":");
-        if(offset != -1)
-        {
-            _port = to!ushort(_domain[offset .. $]);
-            _domain = _domain[0 .. offset];
-        }
-    }
-    
-    /**
      * Opens connection to server
      */
     void open()
     {
-        _sock = new TcpSocket(new InternetAddress(_domain, _port));
+        _sock = new TcpSocket(new InternetAddress(_uri.domain, _uri.port));
         _ss = new SocketStream(_sock);
     }
     
@@ -419,6 +377,7 @@ class HttpClient
      */
     void close()
     {
+        _sock.close();
         _ss.close();
     }
     
@@ -445,10 +404,10 @@ class HttpClient
         request ~= to!string(_method) ~ " ";
         
         /// URL and Protocol version
-        request ~= _url ~ " " ~ ["HTTP/1.0", "HTTP/1.1"][_httpVersion];
+        request ~= _uri.path ~ " " ~ ["HTTP/1.0", "HTTP/1.1"][_httpVersion];
         
         /// Host
-        request ~= "\r\nHost: " ~ _domain ~ "\r\n";
+        request ~= "\r\nHost: " ~ _uri.domain ~ "\r\n";
         
         foreach ( currentHeader; requestHeaders() )
         {
@@ -456,7 +415,6 @@ class HttpClient
         }
         
         request ~= "\r\n";
-
         return request;                       
     }
     
@@ -470,19 +428,25 @@ class HttpClient
         
         /// Content
         char[] line;
-        uint l;
+        int length = -1;
         
-        if( !_responseHeaders.exist(HttpHeader.ContentLength) )
-            return;
+        writeln(_responseHeaders.exist(HttpHeader.ContentLength));
+        if( _responseHeaders.exist(HttpHeader.ContentLength) )
+            length = to!int(_responseHeaders["Content-Length"]);
         
-        int length = to!int(_responseHeaders[HttpHeader.ContentLength].strip);
+        
         while(!_ss.eof())
         {
             line = cast(char[])_ss.readLine();
-            l += line.length + 2;
             _content ~= line;
             
-            if(l >= length)
+            if(length != -1 && _content.length >= length)
+                break;
+                
+            if(length == -1 && !_ss.available())
+                break;
+                    
+            if(!_ss.isOpen())
                 break;
         }
     }
@@ -551,29 +515,26 @@ class HttpClient
 }
 
 
+
 debug(Http)
 {
     void main()
     {
-        auto http = new Http("http://www.google.pl/");
-        http.requestHeaders().set(HttpHeader.AcceptCharset, "UTF-8,*");
+        auto http = new Http("http://google.pl/");
+        http.requestHeaders().set(HttpHeader.AcceptCharset, "UTF-8");
         
         writeln("\nRequest headers are: ");
         foreach( header; http.requestHeaders() )
-        {
             writeln("Name: ", header.name, " -> Value: ", header.value);
-        }
-
+        
         http.open;
         http.send;
-        
         scope(exit) http.close();
         
+        writeln("Response code: ", http.responseHeaders.code);
         writeln("\nResponse headers are: ");
         foreach( header; http.responseHeaders() )
-        {
             writeln("Name: ", header.name, " -> Value: ", header.value);
-        }
         
         writeln("\nPage content:");
         writeln(http.content);

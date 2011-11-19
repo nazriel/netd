@@ -1,0 +1,5 @@
+PROJECTNAME = std.net
+LINKPREFIX = .
+REPOSRCDIR = github.com/nazriel/std.net/tree/dev/
+ROOT = .
+
