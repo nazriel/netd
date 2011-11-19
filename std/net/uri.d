@@ -3,8 +3,8 @@
  *
  * Parse URI (Uniform Resource Identifiers) into parts described in RFC, based on tango.net.uri and GIO
  *
- * Authors: $(WEB github.com/robik, Robert 'Robik' Pasiński), $(WEB github.com/nazriel, Damian Ziemba)
- * Copyright: Robert 'Robik' Pasiński, Damian Ziemba 2011
+ * Authors: $(WEB github.com/robik, Robert 'Robik' Pasiński), $(WEB driv.pl/, Damian 'nazriel' Ziemba)
+ * Copyright: Robert 'Robik' Pasiński, Damian 'nazriel' Ziemba 2011
  * License: $(WEB http://www.boost.org/users/license.html, Boost license)
  *
  * Source: $(REPO std/net/uri.d)
@@ -14,9 +14,6 @@ module std.net.uri;
 import std.string : indexOf;
 import std.conv   : to;
 import std.array  : split;
-
-import std.stdio;
-
 
 /** 
  * Represents query parameter
@@ -51,7 +48,7 @@ struct UriQuery
     /**
      * Array of params
      */
-    QueryParam[255] params;
+    QueryParam[55] params;
     size_t count = 0;
     
     /**
@@ -77,9 +74,9 @@ struct UriQuery
         throw new Exception("Param with name '"~name~"' does not exists");
     }
     
-    int length()
+    size_t length() const
     {
-        return params.length;
+        return count;
     }
     
     /**
@@ -96,7 +93,7 @@ struct UriQuery
      */
     QueryParam opIndex(int i)
     {
-        if(i >= params.length)
+        if(i >= count)
             throw new Exception("Trying to get index that does not exits");
         
         return params[i];
@@ -239,11 +236,14 @@ class Uri
         {
             j = uri[0..i+1].indexOf(":");
             
-            if(j != -1) {
-                _user = uri[0..j];
-                _password = uri[j+1..i];
-            } else {
-                _user = uri[0..i];
+            if(j != -1) 
+            {
+                _user = uri[0 .. j];
+                _password = uri[j+1 .. i];
+            } 
+            else 
+            {
+                _user = uri[0 .. i];
             }
             
             uri = uri[i+1 .. $]; 
@@ -267,10 +267,13 @@ class Uri
         }
         
         if ( _port != 0 && _scheme == Scheme.Unknown )
+        {
             getDefaultScheme();
-        
+        }
         else if ( _port == 0 && _scheme != Scheme.Unknown )
+        {
             getDefaultPort();
+        }
             
         uri = uri[i .. $];   
         
@@ -442,7 +445,7 @@ class Uri
     /**
      * Returns: Uri scheme
      */
-    Scheme scheme() const
+    @property Scheme scheme() const
     {
         return _scheme;
     }
@@ -450,7 +453,7 @@ class Uri
     /**
      * Returns: Uri domain
      */    
-    string domain()
+    @property string domain() const
     {
         return _domain;
     }
@@ -461,7 +464,7 @@ class Uri
     /**
      * Returns: Uri port
      */
-    ushort port() const
+    @property ushort port() const
     {
         return _port;
     }
@@ -469,7 +472,7 @@ class Uri
     /**
      * Returns: Uri path
      */
-    string path() const
+    @property string path() const
     {
         return _path;
     }
@@ -477,12 +480,12 @@ class Uri
     /**
      * Returns: Uri query (raw)
      */
-    string rawquery() const
+    @property string rawquery() const
     {
         return _rawquery;
     }
     
-    UriQuery query()
+    @property UriQuery query() const
     {
         return _query;
     }
@@ -490,7 +493,7 @@ class Uri
     /**
      * Returns: Uri username
      */
-    string user() const
+    @property string user() const
     {
         return _user;
     }
@@ -498,7 +501,7 @@ class Uri
     /**
      * Returns: Uri password
      */
-    string password() const
+    @property string password() const
     {
         return _password;
     }
@@ -506,7 +509,7 @@ class Uri
     /**
      * Returns: Uri fragment
      */
-    string fragment() const
+    @property string fragment() const
     {
         return _fragment;
     }
@@ -551,52 +554,52 @@ class Uri
     }
 }
 
-debug(Uri)
+unittest
 {
-    void main()
-    {
-        auto uri = new Uri("http://user:pass@domain.com:80/path/a?q=query#fragment");
-        
-        assert(uri.scheme() == uri.Http);
-        assert(uri.scheme() == uri.Scheme.Http);
-        assert(uri.scheme() == Uri.Scheme.Http);
-        assert(uri.scheme() == Uri.Http);
-        writeln(uri.query["q"]);
-        
-        writeln("Scheme:   ", uri.scheme);
-        writeln("Username: ", uri.user);
-        writeln("Password: ", uri.password);
-        writeln("Hostname: ", uri.domain);
-        writeln("Port:     ", uri.port);
-        writeln("Path:     ", uri.path);
-        writeln("Query:    ", uri.rawquery);
-        writeln("Fragment: ", uri.fragment);
-        writeln("ReBuild:  ", uri);
-        
-        uri.parse("http://google.com");
-        assert(uri.port() == 80);
-        assert(uri.scheme() == uri.Http);
-        
-        uri.parse("google.com", 80);
-        assert(uri.scheme() == uri.Http);
-        
-        uri.parse("google.com", 8080);
-        assert(uri.scheme() == uri.Http);
-        
-        uri.parse("publicftp.com", 21);
-        assert(uri.scheme() == uri.Ftp);
-        
-        uri.parse("ftp://google.com");
-        assert(uri.scheme() == uri.Ftp, uri.scheme);
-        
-        uri.parse("smtp://gmail.com");
-        assert(uri.scheme() == uri.Smtp);
-        assert(uri.host() == "gmail.com");
-        
-        uri.parse("http://google.com:666");
-        assert(uri.scheme() == uri.Http);
-        assert(uri.port() == 666);
-        
-        assert(Uri.parseUri("http://google.com").scheme() == Uri.Http);
-    }
+    auto uri = new Uri("http://user:pass@domain.com:80/path/a?q=query#fragment");
+    
+    assert(uri.scheme() == uri.Http);
+    assert(uri.scheme() == uri.Scheme.Http);
+    assert(uri.scheme() == Uri.Scheme.Http);
+    assert(uri.scheme() == Uri.Http);
+    
+    assert(uri.host == "domain.com");
+    assert(uri.port == 80);
+    assert(uri.user == "user");
+    assert(uri.password == "pass");
+    assert(uri.path == "/path/a");
+    assert(uri.rawquery == "q=query");
+    assert(uri.query["q"] == "query");
+    assert(uri.fragment == "fragment");   
+    
+    uri.parse("http://google.com");
+    assert(uri.port() == 80);
+    assert(uri.scheme() == uri.Http);
+    
+    uri.parse("google.com", 80);
+    assert(uri.scheme() == uri.Http);
+    
+    uri.parse("google.com", 8080);
+    assert(uri.scheme() == uri.Http);
+    
+    uri.parse("publicftp.com", 21);
+    assert(uri.scheme() == uri.Ftp);
+    
+    uri.parse("ftp://google.com");
+    assert(uri.scheme() == uri.Ftp, uri.scheme);
+    
+    uri.parse("smtp://gmail.com");
+    assert(uri.scheme() == uri.Smtp);
+    assert(uri.host() == "gmail.com");
+    
+    uri.parse("http://google.com:666");
+    assert(uri.scheme() == uri.Http);
+    assert(uri.port() == 666);
+    
+    assert(Uri.parseUri("http://google.com").scheme() == Uri.Http);
+    
+    UriQuery query = UriQuery();
+    query.add(QueryParam("key", "value"));
+    query.add(QueryParam("key1" ,"value1"));
+    assert(query.length() == 2);
 }
