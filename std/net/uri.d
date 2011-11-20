@@ -469,6 +469,13 @@ class Uri
         return _port;
     }
     
+    @property Uri port(ushort port_)
+    {
+        _port = port_;
+        
+        return this;
+    }
+    
     /**
      * Returns: Uri path
      */
@@ -477,6 +484,11 @@ class Uri
         return _path;
     }
     
+    @property Uri path(string path_)
+    {
+        _path = path_;
+        return this;
+    }
     /**
      * Returns: Uri query (raw)
      */
@@ -498,6 +510,13 @@ class Uri
         return _user;
     }
     
+    @property Uri user(string username)
+    {
+        _user = username;
+        
+        return this;
+    }
+    
     /**
      * Returns: Uri password
      */
@@ -506,6 +525,12 @@ class Uri
         return _password;
     }
     
+    @property Uri password(string pass)
+    {
+        _password = pass;
+        
+        return this;
+    }
     /**
      * Returns: Uri fragment
      */
