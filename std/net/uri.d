@@ -150,6 +150,7 @@ class Uri
         string   _user;
         string   _password;
         string   _fragment;
+        string   _rawUri;
     }
     
     /**
@@ -188,7 +189,7 @@ class Uri
         
         size_t i, j;
         _port = port;
-        
+        _rawUri = uri;
         /* 
          * Scheme
          */
@@ -301,6 +302,11 @@ class Uri
         }
         else
             _path = uri[0..$];
+            
+        if ( _path == "" )
+        {
+            _path = "/";
+        }
     }
     
     // TODO: Parse to Query
@@ -474,6 +480,11 @@ class Uri
         _port = port_;
         
         return this;
+    }
+    
+    @property string rawUri() const
+    {
+        return _rawUri;
     }
     
     /**

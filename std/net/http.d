@@ -4,11 +4,13 @@
 module std.net.http;
 
 import std.socket 		: Socket, TcpSocket, InternetAddress;
-import std.socketstream : SocketStream;
-import std.string 		: strip, toLower, indexOf;
+import std.stream       : Stream, BufferedFile, FileMode;
+import std.string 		: strip, toLower, indexOf, splitLines;
 import std.conv 		: to, parse;
 import std.traits 		: isSomeString;
 import std.net.uri;
+
+import std.zlib;
 
 // debug
 import std.stdio;
@@ -29,121 +31,14 @@ enum RequestMethod : string
     Connect = "CONNECT"
 }
 
-/**
- * HTTP headers list
- */
-public enum HttpHeader : string
-{       
-    Accept            = "Accept",
-    AcceptCharset     = "Accept-Charset",
-    AcceptEncoding    = "Accept-Encoding",
-    AcceptLanguage    = "Accept-Language",
-    AcceptRanges      = "Accept-Ranges",
-    Age               = "Age",
-    Allow             = "Allow",
-    Authorization     = "Authorization",
-    CacheControl      = "Cache-Control",
-    Connection        = "Connection",
-    ContentEncoding   = "Content-Encoding",
-    ContentLanguage   = "Content-Language",
-    ContentLength     = "Content-Length",
-    ContentLocation   = "Content-Location",
-    ContentRange      = "Content-Range",
-    ContentType       = "Content-Type",
-    Cookie            = "Cookie",
-    Date              = "Date",
-    ETag              = "ETag",
-    Expect            = "Expect",
-    Expires           = "Expires",
-    From              = "From",
-    Host              = "Host",
-    Identity          = "Identity",
-    IfMatch           = "If-Match",
-    IfModifiedSince   = "If-Modified-Since",
-    IfNoneMatch       = "If-None-Match",
-    IfRange           = "If-Range",
-    IfUnmodifiedSince = "If-Unmodified-Since",
-    KeepAlive         = "Keep-Alive",
-    LastModified      = "Last-Modified",
-    Location          = "Location",
-    MaxForwards       = "Max-Forwards",
-    MimeVersion       = "MIME-Version",
-    Pragma            = "Pragma",
-    ProxyAuthenticate = "Proxy-Authenticate",
-    ProxyConnection   = "Proxy-Connection",
-    Range             = "Range",
-    Referrer          = "Referer",
-    RetryAfter        = "Retry-After",
-    Server            = "Server",
-    ServletEngine     = "Servlet-Engine",
-    SetCookie         = "Set-Cookie", 
-    SetCookie2        = "Set-Cookie2",
-    TE                = "TE",
-    Trailer           = "Trailer",
-    TransferEncoding  = "Transfer-Encoding",
-    Upgrade           = "Upgrade",
-    UserAgent         = "User-Agent",
-    Vary              = "Vary",
-    Warning           = "Warning",
-    WwwAuthenticate   = "WWW-Authenticate",
-    Todo              = "TODO",
-}
-
-enum HttpResponseCode : ushort
-{
-    Continue                    = 100,
-    SwitchingProtocols          = 101,
-    
-    OK                          = 200,
-    Created                     = 201,
-    Accepted                    = 202,
-    NonAuthoritativeInformation = 203,
-    NoContent                   = 204,
-    ResetContent                = 205,
-    PartialContent              = 206,
-    
-    MultipleChoies              = 300,
-    MovedPermanently            = 301,
-    Found                       = 302,
-    SeeOther                    = 303,
-    NotModified                 = 304,
-    UseProxy                    = 305,
-    TemponaryRedirect           = 307,
-    
-    BadRequest                  = 400,
-    Unauthorized                = 401,
-    PaymentRequired             = 402,
-    Forbidden                   = 403,
-    NotFound                    = 404,
-    MethodNotAllowed            = 405,
-    NotAcceptable               = 406,
-    ProxyAuthenticationRequired = 407,
-    RequestTimeout              = 408,
-    Conflict                    = 409,
-    Gone                        = 410,
-    LengthRequired              = 411,
-    PreconditionFailed          = 412,
-    RequestEntityTooLarge       = 413,
-    RequestURITooLarge          = 414,
-    UnsupportedMediaType        = 415,
-    RequestedRangeNotSatisfiable= 416,
-    ExpectationFailed           = 417,
-    
-    InternalServerError         = 500,
-    NotImplemented              = 501,
-    BadGateway                  = 502,
-    ServiceUnavaible            = 503,
-    GatewayTimeout              = 504,
-    VersionNotSupported         = 505
-       
-}
+private enum bufferSize = 4096;
 
 /**
  * Represents single HTTP header
  */
 struct Header
 {
-    HttpHeader name;
+    string name;
     string value;
 }
 
@@ -152,51 +47,20 @@ class Headers
 {
     protected 
     {
-        HttpResponseCode _code;
+        ushort _code;
         Header[] _headers;
     }
     
-    this() {}
-
-    void set(K : HttpHeader, V)(K name, V value)
+    void set(V)(string name, V value)
     {
-        add(name, to!string(value));
+        add(name, to!(string)(value));
     }
-    
-    void set(K, V)(K name, V value)
-		if ( isSomeString!K )
-    {
-        string key = cast(string) name;
 
-        foreach (cur; __traits(allMembers, HttpHeader))
-        {
-            if ( __traits(getMember, HttpHeader, cur) == key )
-            {
-                add( cast(HttpHeader) cur, to!(string)(value) );
-            }
-        }
-    }
-    
-    HttpHeader stringToEnum(string name)
-    {
-        foreach (cur; __traits(allMembers, HttpHeader))
-        {
-            if ( __traits(getMember, HttpHeader, cur) == name )
-            {
-                return cast(HttpHeader) cur;
-            }
-        }
-
-        /** TODO:
-            handle some exotic headers
-        */
-        return cast(HttpHeader) "TODO";
-    }
-    bool exist(HttpHeader name)
+    bool exist(string name)
     {
         foreach ( cur; _headers )
         {
-            if ( cur.name == mixin("HttpHeader."~name) )
+            if ( toLower(cur.name) == toLower(name) )
             {
                 return true;
             }
@@ -205,11 +69,11 @@ class Headers
         return false;
     }
 
-    void add(HttpHeader name, string value)
+    void add(string name, string value)
     {
         foreach (ref cur; _headers )
         {
-            if ( cur.name == name )
+            if ( toLower(cur.name) == toLower(name) )
             {
                 cur.value = value;
                 return;
@@ -218,32 +82,30 @@ class Headers
 
         _headers ~= Header(name, value);
     }
-    string get(HttpHeader name)
+    
+    string get(string name)
     {
         foreach (_value; _headers)
         {
-            if ( _value.name == name )
+            if ( toLower(_value.name) == toLower(name) )
             {
                 return _value.value;
             }
         }
 
+        // Throw exception?
+        
         return null;
     }
     
-    HttpResponseCode code()
+    ushort code()
     {
         return _code;
     }
-
-    string opIndex(HttpHeader name)
-    {
-        return get(name);
-    }
-
+    
     string opIndex(string name)
     {
-        return get(stringToEnum(name));
+        return get(name);
     }
 
     int opApply (int delegate(ref Header) dg)
@@ -264,26 +126,51 @@ class Headers
         return result;
     }
     
-    void parseStream(SocketStream stream)
+    void parseStream(Socket _ss)
     {
-        sizediff_t pos = -1;
-
-        for(;;)
+        char[bufferSize] buffer;
+        char[1] Char;
+        size_t len = 0;
+        size_t totalLen = 0;
+        
+        while (true)
         {
-            char[] line = stream.readLine();
+            len = _ss.receive(Char);
+            if ( len < 1 ) break;
             
-            if(line.length == 0)
-                break;
-
-            pos = line.indexOf(':');
-
-            if ( pos != -1)
-                set(line[0..pos], line[pos+1..$].strip);
-            else if(line[0..4] == "HTTP")
-                _code = cast(HttpResponseCode)to!ushort(line[9..12]);
+            buffer[totalLen++] = Char[0];
+            
+            if ( totalLen > 8 )
+            {
+                if ( buffer[totalLen - 8 .. totalLen - 4] == "\r\n\r\n" )
+                {
+                    break;
+                }
+            }
+        }
+        
+        sizediff_t pos;
+        
+        foreach (line; buffer[0..totalLen].splitLines())
+        {
+            pos = line.indexOf(": ");
+            
+            if ( pos != -1 )
+            {
+                set(line[0..pos].idup, line[pos+2..$].idup);
+            }
+            else
+            {
+                if ( line.length > 4 )
+                {
+                    if ( line[0..4] == "HTTP")
+                    {
+                        _code = to!(ushort)(line[9..12]);
+                    }
+                }
+            }
         }
     }
-    
 }
 
 /**
@@ -294,15 +181,12 @@ alias HttpClient Http;
 /// ditto
 class HttpClient
 {
+    
     protected
     {		
-        Socket _sock;
-        SocketStream _ss;        
+        Socket _sock;  
         RequestMethod _method;
         Uri _uri;
-        
-        /// Page contents
-        string _content;
         
         /// HTTP protocol version
         ushort _httpVersion = 1;
@@ -357,10 +241,7 @@ class HttpClient
      */
     this(string uri, RequestMethod method = RequestMethod.Get)
     {
-		_uri = new Uri(uri);
-		_method = method;
-        _responseHeaders = new Headers();
-        _requestHeaders  = new Headers();
+		this(new Uri(uri), method);
 	}
     
     /**
@@ -369,7 +250,8 @@ class HttpClient
     void open()
     {
         _sock = new TcpSocket(new InternetAddress(_uri.domain, _uri.port));
-        _ss = new SocketStream(_sock);
+        _sock.send(buildRequest());
+        getResponse();
     }
     
     /**
@@ -378,16 +260,6 @@ class HttpClient
     void close()
     {
         _sock.close();
-        _ss.close();
-    }
-    
-    /**
-     * Sends request to the server
-     */
-    void send()
-    {
-        _ss.writeString( buildRequest() );
-        getResponse();
     }
     
     /**
@@ -424,40 +296,94 @@ class HttpClient
     protected void getResponse()
     {
 		/// Headers
-        responseHeaders.parseStream(_ss);
+        responseHeaders.parseStream(_sock); 
         
-        /// Content
-        char[] line;
         int length = -1;
         
-        writeln(_responseHeaders.exist(HttpHeader.ContentLength));
-        if( _responseHeaders.exist(HttpHeader.ContentLength) )
+        if( _responseHeaders.exist("Content-Length") )
             length = to!int(_responseHeaders["Content-Length"]);
-        
-        
-        while(!_ss.eof())
+
+       
+        if ( (_responseHeaders.code == 301 || _responseHeaders.code == 302 || _responseHeaders.code == 303 ) && 
+                FollowLocation == true && _responseHeaders.exist("Location") )
         {
-            line = cast(char[])_ss.readLine();
-            _content ~= line;
-            
-            if(length != -1 && _content.length >= length)
-                break;
-                
-            if(length == -1 && !_ss.available())
-                break;
-                    
-            if(!_ss.isOpen())
-                break;
+            _uri.parse(_responseHeaders["Location"]);
+            debug(Http) {
+                writeln("Redirecting");
+            }
+            open();
         }
     }
     
-    /**
-     * Returns: Page content, empty if no content specified
-     */
-    string content() const
+    void get()(string localFile)
     {
-        return _content;
-    }    
+        if ( responseHeaders.code() != 200 ) 
+        {
+            return;
+        }
+        
+        get(new BufferedFile(localFile, FileMode.Out));
+    }
+    
+    void get()(Stream localStream)
+    {
+        if ( responseHeaders.code() != 200 ) 
+        {
+            return;
+        }
+        
+        ubyte[bufferSize] buffer;
+        sizediff_t len;
+        
+        while (true)
+        {
+            len = _sock.receive(buffer);
+            
+            if ( len <= 0 )
+            {
+                break;
+            }
+            
+            localStream.write(buffer[0..len]);
+        }
+        
+        localStream.close();
+    }
+    
+    T[] get(T = immutable(char))()
+    {
+        if ( responseHeaders.code() != 200 ) 
+        {
+            return null;
+        }
+        
+        T[] buffer;
+        
+        get(buffer);
+        
+        return buffer[0..$];
+    }
+    
+    T[] get(T = immutable(char))(T[] buffer)
+    {
+        if ( responseHeaders.code() != 200 ) 
+        {
+            return null;
+        }
+        
+        ubyte[bufferSize] _char;
+        sizediff_t len;
+        
+        while (true)
+        {
+           len = _sock.receive(_char);
+           if ( len < 1 ) break;
+           
+           buffer~= cast(T[]) _char[0..len];
+        }
+        
+        return buffer[0..$];
+    }   
     
     /**
      * Returns: Request method
@@ -520,23 +446,35 @@ debug(Http)
 {
     void main()
     {
-        auto http = new Http("http://google.pl/");
-        http.requestHeaders().set(HttpHeader.AcceptCharset, "UTF-8");
+        auto http = new Http("http://google.com/");
+        
+        http.requestHeaders.set("Accept-Charset", "UTF-8,*");
+        http.requestHeaders.set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:7.0.1) Gecko/20100101 Firefox/7.0.1");
+        http.requestHeaders.set("Accept-Language", "en-us,en;q=0.5");
+        //http.requestHeaders.set("Accept-Encoding", "gzip");
+        http.requestHeaders.set("Connection", "keep-alive");
+        
+        
+        http.open();
+        
         
         writeln("\nRequest headers are: ");
         foreach( header; http.requestHeaders() )
+        {
             writeln("Name: ", header.name, " -> Value: ", header.value);
+        }
+       
         
-        http.open;
-        http.send;
-        scope(exit) http.close();
-        
-        writeln("Response code: ", http.responseHeaders.code);
-        writeln("\nResponse headers are: ");
+        writeln("\nResponse code: ", http.responseHeaders.code);
+        writeln("Response headers are: ");
         foreach( header; http.responseHeaders() )
             writeln("Name: ", header.name, " -> Value: ", header.value);
         
+        writeln("Content-Type will be: ", http.responseHeaders["Content-Type"]);
+        
         writeln("\nPage content:");
-        writeln(http.content);
+        http.get(new BufferedFile("webpage.html", FileMode.Out));
+        
+        http.close();
     }
 }
