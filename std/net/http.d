@@ -13,7 +13,10 @@ import std.net.uri;
 import std.zlib;
 
 // debug
-import std.stdio;
+debug(Http)
+{
+    import std.stdio;
+}
 
 
 /**
@@ -42,20 +45,41 @@ struct Header
     string value;
 }
 
-// TODO: rebuild?
+/**
+ * Represents HTTP headers
+ */
 class Headers
 {
     protected 
     {
+        /// Response Code
         ushort _code;
+        
+        /// Headers
         Header[] _headers;
     }
     
+    /**
+     * Sets header value
+     * 
+     * Params:
+     *  name    =   Header name
+     *  value   =   Value to set
+     */
     void set(V)(string name, V value)
     {
         add(name, to!(string)(value));
     }
 
+    /**
+     * Checks if header exists
+     * 
+     * Params:
+     *  name    =   Header name to check
+     * 
+     * Returns:
+     *  True if header exists, false otherwise
+     */
     bool exist(string name)
     {
         foreach ( cur; _headers )
@@ -69,6 +93,13 @@ class Headers
         return false;
     }
 
+    /**
+     * Adds new header
+     * 
+     * Params:
+     *  name    =   Header name
+     *  value   =   Value to set
+     */
     void add(string name, string value)
     {
         foreach (ref cur; _headers )
@@ -83,6 +114,15 @@ class Headers
         _headers ~= Header(name, value);
     }
     
+    /**
+     * Returns header value
+     * 
+     * Params:
+     *  name    =   Header name to get
+     * 
+     * Returns:
+     *  Header value, as string
+     */
     string get(string name)
     {
         foreach (_value; _headers)
@@ -98,6 +138,12 @@ class Headers
         return null;
     }
     
+    /**
+     * Returns HTTP response code
+     * 
+     * Returns:
+     *  HTTP response code
+     */
     ushort code()
     {
         return _code;
@@ -173,12 +219,17 @@ class Headers
     }
 }
 
+
+ 
 /**
  * HTTP client class 
+ * 
+ * Example:
+ * ---------
+ * auto http = new Http("http://google.com");
+ * http.get(new BufferedFile("googlecontents.html", FileMode.Out));
+ * ---------
  */
-alias HttpClient Http;
-
-/// ditto
 class HttpClient
 {
     
@@ -201,6 +252,9 @@ class HttpClient
     
     struct Options
     {
+        /**
+         * Should follow 'Location' header?
+         */
         bool FollowLocation = true;
     }
     Options options;
@@ -213,10 +267,7 @@ class HttpClient
      * 	url	=	Web site URL, http(s):// can be omitted
      * 	method	=	Request method
      * 
-     * Example:
-     * --------
-     * auto http = new Http("http://localhost:6666/");
-     * --------
+     * 
      */
     this(Uri uri, RequestMethod method = RequestMethod.Get)
     {
@@ -236,7 +287,7 @@ class HttpClient
      * 
      * Example:
      * --------
-     * auto http = new Http("google.com", 80);
+     * auto http = new Http("http://google.com", 80);
      * --------
      */
     this(string uri, RequestMethod method = RequestMethod.Get)
@@ -266,7 +317,7 @@ class HttpClient
      * Creates request
      * 
      * Returns:
-     * 	Request
+     * 	Request as string
      */
     string buildRequest()
     {
@@ -315,6 +366,12 @@ class HttpClient
         }
     }
     
+    /**
+     * Gets contents and saves in localFile
+     * 
+     * Params:
+     *  localFile   =   Where to save contents
+     */
     void get()(string localFile)
     {
         if ( responseHeaders.code() != 200 ) 
@@ -325,6 +382,12 @@ class HttpClient
         get(new BufferedFile(localFile, FileMode.Out));
     }
     
+    /**
+     * Gets contetns and saves into stream
+     * 
+     * Params:
+     *  localStream = Stream to write contents
+     */
     void get()(Stream localStream)
     {
         if ( responseHeaders.code() != 200 ) 
@@ -350,6 +413,12 @@ class HttpClient
         localStream.close();
     }
     
+    /**
+     * Returns contents
+     * 
+     * Returns:
+     *  Page contents
+     */
     T[] get(T = immutable(char))()
     {
         if ( responseHeaders.code() != 200 ) 
@@ -364,6 +433,15 @@ class HttpClient
         return buffer[0..$];
     }
     
+    /**
+     * Returns contents with operating on specified buffer
+     * 
+     * Params:
+     *  buffer  =   Buffer to work on
+     * 
+     * Returns:
+     *  Contents
+     */
     T[] get(T = immutable(char))(T[] buffer)
     {
         if ( responseHeaders.code() != 200 ) 
@@ -449,7 +527,7 @@ debug(Http)
         auto http = new Http("http://google.com/");
         
         http.requestHeaders.set("Accept-Charset", "UTF-8,*");
-        http.requestHeaders.set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:7.0.1) Gecko/20100101 Firefox/7.0.1");
+        //http.requestHeaders.set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:7.0.1) Gecko/20100101 Firefox/7.0.1");
         http.requestHeaders.set("Accept-Language", "en-us,en;q=0.5");
         //http.requestHeaders.set("Accept-Encoding", "gzip");
         http.requestHeaders.set("Connection", "keep-alive");
@@ -473,8 +551,10 @@ debug(Http)
         writeln("Content-Type will be: ", http.responseHeaders["Content-Type"]);
         
         writeln("\nPage content:");
-        http.get(new BufferedFile("webpage.html", FileMode.Out));
+        http.get(new BufferedFile("webpaage.html", FileMode.Out));
         
         http.close();
     }
 }
+/// Ditto
+alias HttpClient Http;

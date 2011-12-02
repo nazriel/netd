@@ -5,7 +5,8 @@
  */
 $(document).ready(function() {
 	
-    jQuery.fn.exists = function(){return this.length>0;}
+    $('#childs').css('display', 'none');
+	$('#modules').css('display','none');
     
 	/*
 	 * COLORIZE CLASSES AND STRUCTS

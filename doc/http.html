@@ -3,7 +3,7 @@
 		<head>
 			<meta http-equiv="content-type" content="text/html; charset=utf-8">
 			<title>std.net.http - std.net documentation</title>
-			<link rel="stylesheet" type="text/css" href="./style.css">
+			<link rel="stylesheet" type="text/css" href="./float.css">
 			<script type="text/javascript" src="./jquery.js"></script>
 			<script type="text/javascript" src="./cutedoc.js"></script>
 		</head>
@@ -35,21 +35,226 @@
 <div class="decldd"><div class="summary">HTTP request method</div>
 
 </div>
-<h1 class="decl">enum <a class="psymbol" name="HttpHeader">HttpHeader</a>;
-</h1>
-<div class="decldd"><div class="summary">HTTP headers list</div>
-
-</div>
 <h1 class="decl">struct <a class="psymbol" name="Header">Header</a>;
 </h1>
 <div class="decldd"><div class="summary">Represents single HTTP header</div>
 
 </div>
-<h1 class="decl">alias <a class="psymbol" name="Http">Http</a>;
-<br>class <a class="psymbol" name="<a class="psymbol" name="HttpClient">HttpClient</a>"><a class="psymbol" name="HttpClient">HttpClient</a></a>;
+<h1 class="decl">class <a class="psymbol" name="Headers">Headers</a>;
 </h1>
-<div class="decldd"><div class="summary">HTTP client class</div>
+<div class="decldd"><div class="summary">Represents HTTP headers</div>
 
+<dl><h1 class="decl">protected ushort <a class="psymbol" name="_code">_code</a>;
+</h1>
+<div class="decldd"><div class="summary">Response Code</div>
+
+</div>
+<h1 class="decl">protected Header[] <a class="psymbol" name="_headers">_headers</a>;
+</h1>
+<div class="decldd"><div class="summary">Headers</div>
+
+</div>
+<h1 class="decl">void <a class="psymbol" name="set">set</a>(V)(string <i>name</i>, V <i>value</i>);
+</h1>
+<div class="decldd"><div class="summary">Sets header value
+</div>
+<h3 class="section">Parameters</h3> <div class="section"><table width="100%"><tr><td width="16%">name</td>
+<td>Header name</td></tr>
+<tr><td width="16%">value</td>
+<td>Value to <a class="psymbol" name="set">set</a></td></tr>
+</table></div>
+
+</div>
+<h1 class="decl">bool <a class="psymbol" name="exist">exist</a>(string <i>name</i>);
+</h1>
+<div class="decldd"><div class="summary">Checks if header exists
+</div>
+<h3 class="section">Parameters</h3> <div class="section"><table width="100%"><tr><td width="16%">string <i>name</i></td>
+<td>Header <i>name</i> to check</td></tr>
+</table></div>
+<div class="stdsection"><b>Returns</b>:<br/> &nbsp; &nbsp; &nbsp; True if header exists, <font color=blue>false</font> otherwise</div>
+
+</div>
+<h1 class="decl">void <a class="psymbol" name="add">add</a>(string <i>name</i>, string <i>value</i>);
+</h1>
+<div class="decldd"><div class="summary">Adds new header
+</div>
+<h3 class="section">Parameters</h3> <div class="section"><table width="100%"><tr><td width="16%">string <i>name</i></td>
+<td>Header <i>name</i></td></tr>
+<tr><td width="16%">string <i>value</i></td>
+<td>Value to set</td></tr>
+</table></div>
+
+</div>
+<h1 class="decl">string <a class="psymbol" name="get">get</a>(string <i>name</i>);
+</h1>
+<div class="decldd"><div class="summary">Returns header value
+</div>
+<h3 class="section">Parameters</h3> <div class="section"><table width="100%"><tr><td width="16%">string <i>name</i></td>
+<td>Header <i>name</i> to <a class="psymbol" name="get">get</a></td></tr>
+</table></div>
+<div class="stdsection"><b>Returns</b>:<br/> &nbsp; &nbsp; &nbsp; Header value, as string</div>
+
+</div>
+<h1 class="decl">ushort <a class="psymbol" name="code">code</a>();
+</h1>
+<div class="decldd"><div class="summary">Returns HTTP response <a class="psymbol" name="code">code</a>
+</div>
+<div class="stdsection"><b>Returns</b>:<br/> &nbsp; &nbsp; &nbsp; HTTP response <a class="psymbol" name="code">code</a></div>
+
+</div>
+</dl>
+</div>
+<h1 class="decl">class <a class="psymbol" name="HttpClient">HttpClient</a>;
+<br>alias <a class="psymbol" name="Http">Http</a>;
+</h1>
+<div class="decldd"><div class="summary">HTTP client class
+</div>
+<b>Example:</b><br>
+<pre class="d_code"> <font color=blue>auto</font> http = <font color=blue>new</font> Http(<span class="code_string">"http://google.com"</span>);
+ http.get(<font color=blue>new</font> BufferedFile(<span class="code_string">"googlecontents.html"</span>, FileMode.Out));
+</pre>
+<br><br>
+
+<dl><h1 class="decl">protected ushort <a class="psymbol" name="_httpVersion">_httpVersion</a>;
+</h1>
+<div class="decldd"><div class="summary">HTTP protocol version</div>
+
+</div>
+<h1 class="decl">protected Headers <a class="psymbol" name="_responseHeaders">_responseHeaders</a>;
+</h1>
+<div class="decldd"><div class="summary">Server response headers</div>
+
+</div>
+<h1 class="decl">protected Headers <a class="psymbol" name="_requestHeaders">_requestHeaders</a>;
+</h1>
+<div class="decldd"><div class="summary">Server request headers</div>
+
+</div>
+<h1 class="decl">this(Uri <i>uri</i>, RequestMethod <i>method</i> = "GET");
+</h1>
+<div class="decldd"><div class="summary">Creates new HTTPClient object from URL
+</div>
+<h3 class="section">Parameters</h3> <div class="section"><table width="100%"><tr><td width="16%">url</td>
+<td>Web site URL, http(s):// can be omitted</td></tr>
+<tr><td width="16%">RequestMethod <i>method</i></td>
+<td>Request <i>method</i></td></tr>
+</table></div>
+
+</div>
+<h1 class="decl">this(string <i>uri</i>, RequestMethod <i>method</i> = "GET");
+</h1>
+<div class="decldd"><div class="summary">Creates new HTTPClient object from domain, port and url
+</div>
+<h3 class="section">Parameters</h3> <div class="section"><table width="100%"><tr><td width="16%">domain</td>
+<td>Domain to connect to</td></tr>
+<tr><td width="16%">port</td>
+<td>Port to connect on</td></tr>
+<tr><td width="16%">url</td>
+<td>URL to send request to</td></tr>
+</table></div>
+<b>Example:</b><br>
+<pre class="d_code"> <font color=blue>auto</font> http = <font color=blue>new</font> Http(<span class="code_string">"http://google.com"</span>, 80);
+</pre>
+<br><br>
+
+</div>
+<h1 class="decl">void <a class="psymbol" name="open">open</a>();
+</h1>
+<div class="decldd"><div class="summary">Opens connection to server</div>
+
+</div>
+<h1 class="decl">void <a class="psymbol" name="close">close</a>();
+</h1>
+<div class="decldd"><div class="summary">Closes connection</div>
+
+</div>
+<h1 class="decl">string <a class="psymbol" name="buildRequest">buildRequest</a>();
+</h1>
+<div class="decldd"><div class="summary">Creates request
+</div>
+<div class="stdsection"><b>Returns</b>:<br/> &nbsp; &nbsp; &nbsp; Request as string</div>
+
+</div>
+<h1 class="decl">protected void <a class="psymbol" name="getResponse">getResponse</a>();
+</h1>
+<div class="decldd"><div class="summary">Gets server response: headers and content</div>
+
+</div>
+<h1 class="decl">void <a class="psymbol" name="get">get</a>()(string <i>localFile</i>);
+</h1>
+<div class="decldd"><div class="summary">Gets contents and saves in localFile
+</div>
+<h3 class="section">Parameters</h3> <div class="section"><table width="100%"><tr><td width="16%">localFile</td>
+<td>Where to save contents</td></tr>
+</table></div>
+
+</div>
+<h1 class="decl">void <a class="psymbol" name="get">get</a>()(Stream <i>localStream</i>);
+</h1>
+<div class="decldd"><div class="summary">Gets contetns and saves into stream
+</div>
+<h3 class="section">Parameters</h3> <div class="section"><table width="100%"><tr><td width="16%">localStream</td>
+<td>Stream to write contents</td></tr>
+</table></div>
+
+</div>
+<h1 class="decl">T[] <a class="psymbol" name="get">get</a>(T = immutable(char))();
+</h1>
+<div class="decldd"><div class="summary">Returns contents
+</div>
+<div class="stdsection"><b>Returns</b>:<br/> &nbsp; &nbsp; &nbsp; Page contents</div>
+
+</div>
+<h1 class="decl">T[] <a class="psymbol" name="get">get</a>(T = immutable(char))(T[] <i>buffer</i>);
+</h1>
+<div class="decldd"><div class="summary">Returns contents with operating on specified buffer
+</div>
+<h3 class="section">Parameters</h3> <div class="section"><table width="100%"><tr><td width="16%">buffer</td>
+<td>Buffer to work on</td></tr>
+</table></div>
+<div class="stdsection"><b>Returns</b>:<br/> &nbsp; &nbsp; &nbsp; Contents</div>
+
+</div>
+<h1 class="decl">const RequestMethod <a class="psymbol" name="method">method</a>();
+</h1>
+<div class="decldd"><div class="stdsection"><b>Returns</b>:<br/> &nbsp; &nbsp; &nbsp; Request <a class="psymbol" name="method">method</a></div>
+
+</div>
+<h1 class="decl">void <a class="psymbol" name="method">method</a>(RequestMethod <a class="psymbol" name="method">method</a>);
+</h1>
+<div class="decldd"><div class="summary">Sets HTTP request <a class="psymbol" name="method">method</a>
+</div>
+<h3 class="section">Parameters</h3> <div class="section"><table width="100%"><tr><td width="16%">RequestMethod <a class="psymbol" name="method">method</a></td>
+<td>Request <a class="psymbol" name="method">method</a></td></tr>
+</table></div>
+
+</div>
+<h1 class="decl">const ushort <a class="psymbol" name="httpVersion">httpVersion</a>();
+</h1>
+<div class="decldd"><div class="stdsection"><b>Returns</b>:<br/> &nbsp; &nbsp; &nbsp; HTTP version</div>
+
+</div>
+<h1 class="decl">void <a class="psymbol" name="httpVersion">httpVersion</a>(ushort <i>ver</i>);
+</h1>
+<div class="decldd"><div class="summary">Sets HTTP version
+</div>
+<h3 class="section">Parameters</h3> <div class="section"><table width="100%"><tr><td width="16%">ushort <i>ver</i></td>
+<td>HTTP version, 0 - HTTP/1.0, 1 - HTTP/1.1</td></tr>
+</table></div>
+
+</div>
+<h1 class="decl">Headers <a class="psymbol" name="responseHeaders">responseHeaders</a>();
+</h1>
+<div class="decldd"><div class="stdsection"><b>Returns</b>:<br/> &nbsp; &nbsp; &nbsp; response headers</div>
+
+</div>
+<h1 class="decl">Headers <a class="psymbol" name="requestHeaders">requestHeaders</a>();
+</h1>
+<div class="decldd"><div class="stdsection"><b>Returns</b>:<br/> &nbsp; &nbsp; &nbsp; request headers</div>
+
+</div>
+</dl>
 </div>
 </dl>
 
