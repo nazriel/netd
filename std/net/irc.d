@@ -1,211 +1,213 @@
 module std.net.irc;
 
+import std.socket : TcpSocket, InternetAddress;
+import std.socketstream;
+import std.stdio;
+import std.string : split, indexOf, toUpper;
 import std.net.uri;
-import std.socket, std.socketstream;
-import std.typecons;
-import std.stdio, std.string, std.random;
 
-struct IrcMsg
+
+struct IrcUser
 {
-    struct Author
-    {
-        string nick;
-        string name;
-        string host;
-    }
+    string user;
+    string nick;
+    string realname;
     
-    Author author;
-    string message;
-    string channel;
-    string full_msg;
+    public this(string _user, string _nick, string _realname)
+    {
+        user = _user;
+        nick = _nick;
+        realname = _realname;
+    }
 }
 
-class Irc
+struct IrcMessage
 {
-    private 
+    string message;
+    IrcUser author;
+}
+
+struct IrcEvents
+{
+    void delegate() OnEnter;
+    void delegate() OnLeave;
+    void delegate() OnKick;
+    void delegate() OnConnectionLost;
+    void delegate(IrcMessage msg) OnMessageRecv;
+}
+
+struct IrcResponse
+{
+    string command;
+    string[] params;
+}
+
+class IrcSession
+{
+    protected
     {
-        Uri _uri;
-        Socket _sock;
+        TcpSocket _sock;
         SocketStream _reader;
         SocketStream _writer;
-        
-       
-    }   
-        string nick;
-        string user;
-        string realname;
-        string[] channel;
+        Uri _uri;
+        IrcUser _user;
+        IrcEvents events;
+    }
+    public alias events this; 
     
-    this (Uri uri)
+    
+    this(Uri uri)
     {
         _uri = uri;
     }
     
-    void open()
+    public void connect()
     {
         _sock = new TcpSocket(new InternetAddress(_uri.host, _uri.port));
-        _reader  = new SocketStream(_sock);
-        _writer = new  SocketStream(_sock);
-        
-        send("USER " ~ user ~ " 8 * :" ~ realname);
-        send("NICK " ~ nick);
-        
-        foreach ( _channel; channel )
-        {
-            send("JOIN #" ~ _channel);
-        }
+        _reader = new SocketStream(_sock);
+        _writer = new SocketStream(_sock);
     }
     
-    IrcMsg read()
+    public void auth(IrcUser user)
     {
-        char[] msg = _reader.readLine();
-        sizediff_t blockBegin = -1;
-        sizediff_t blockEnd = -1;
-        
-        if ( msg.length > 1 )
+        _user = user;
+        send("USER " ~ user.user ~ " 8 * :" ~ user.realname);
+        send("NICK " ~ user.nick);
+    }
+    
+    public void join(string channel)
+    {
+        send("JOIN #" ~channel);
+    }
+    
+    public bool read()
+    {
+        string line = cast(string)_reader.readLine();
+        writeln("> ", line);
+        if(!_sock.isAlive() || !line.length)
         {
-            if ( msg[0] == ':' )
-            {
-                blockBegin = 0;
-                blockEnd = msg[1..$].indexOf(":");
-            }
-            else
-            {
-                blockBegin = -1;
-                blockEnd = msg.indexOf(":"); // i.e PING request
-            }
+            OnConnectionLost();
+            return false;
         }
         
-        
-        string channel, message, full_message, nick, host, full_msg;
-        
-        IrcMsg ircMsg = IrcMsg(IrcMsg.Author(nick, "", host), message, channel, full_msg);
-        
-        if ( blockBegin != -1 && blockEnd != -1 )
-        {
-            sizediff_t privMsgPos = msg.indexOf("PRIVMSG");
+        auto res = parseLine(line);
+        parseResponse(res);
             
-            if ( privMsgPos != -1 )
-            {
-                if ( privMsgPos + 9 <= msg.length ) {
-                    ircMsg.channel = msg[privMsgPos + 9 .. blockEnd].idup;
-                }
-                ircMsg.message = msg[blockEnd+2..$].idup;
-                full_msg = msg.idup;
-                
-                char[] author = msg[blockBegin .. privMsgPos - 1];
-                
-                if ( author.indexOf("!") != -1 )
-                {
-                    ircMsg.author.nick = author[ 1 ..  author.indexOf("!") ].idup;
-                    ircMsg.author.name = author[ author.indexOf("!") + 1 .. author.indexOf("@")].idup;
-                }
-                if ( author.indexOf("@") != -1 )
-                {
-                    ircMsg.author.host = author[ author.indexOf("@")+1 .. $ ].idup;
-                }
-            }
-        }
-        
-        if ( msg.length > 5 ) 
-        {
-            if ( msg[0..4] == "PING" )
-            {
-                send("PONG");
-            }
-        }
-        
-        if ( onMsgReceive !is null )
-        {
-            onMsgReceive(ircMsg);
-        }
-        
-        return ircMsg;
-    }
-    void send(const(char)[] command)
-    {
-        _writer.writeLine(command);
+        return true;
     }
     
-    void sendMsg(const(char)[] channel, const(char)[] msg)
+    public void close()
     {
-        send("PRIVMSG #" ~ channel ~ " :" ~ msg);
-    }
-    
-    void close()
-    {
+        OnLeave();
+        send("QUIT");
         _reader.close();
         _writer.close();
     }
     
-    private Tuple!(string, string, string, string, string)
-    parseResponse()
+    protected void send(string msg)
     {
-        return tuple("", "" ,"", "", "");
+        writeln("< ",msg);
+        _writer.writeLine(msg);
     }
-    void delegate(IrcMsg msg) onMsgReceive;
+    
+    /*
+     * The Original Code is the Team15 library.
+     *
+     * The Initial Developer of the Original Code is
+     * Stéphan Kochen <stephan@kochen.nl>
+     * Portions created by the Initial Developer are Copyright (C) 2006
+     * the Initial Developer. All Rights Reserved.
+     */
+    protected IrcResponse parseLine(string line)
+    {
+        size_t colon = -1, space = -1;
+        string target;
+        string[] params;
+        string command;
+        
+        colon = line.indexOf(':');
+        
+        if(colon == 0)
+        {
+            space = line.indexOf(' ');
+            target = line[1..space];
+            line = line[space + 1 .. $];
+            colon = line.indexOf(':');
+        }
+        
+        if(colon == -1)
+        {
+            params = line.split();
+        }
+        else
+        {
+            params = line[0..colon].split();
+            params.length = params.length + 1;
+            params[$-1] = line[colon+1 .. $];
+        }
+        
+        command = toUpper(params[0]);
+        params = params[1..$];
+        
+        if(command == "001")
+            writeln("success");
+        else if(command == "433")
+            writeln("Nickname in use");
+        
+        auto res = IrcResponse();
+        res.command = command;
+        res.params = params;
+        return res;
+    }
+    
+    protected void parseResponse(IrcResponse r)
+    {
+        // Temp
+        if(r.command == "433")
+            writeln("Nickname in use");
+        
+        if(r.command == "PING")
+            send("PONG " ~ r.params[0]);
+        else if(r.command == "PRIVMSG")
+        {
+            if(r.params.length != 2)
+                return;
+                
+            string txt = r.params[1];
+            
+            if(txt.length >= 10 && txt[0..10] == "\x01ACTION" )
+            { 
+                writeln("ACTION");
+                return;
+            }
+            
+            auto msg = IrcMessage();
+            msg.message = txt;
+            msg.author = IrcUser();    
+            OnMessageRecv(msg);
+        }
+            
+    }
 }
 
 debug(Irc)
 {
+ 
     void main()
     {
-        auto irc = new Irc( new Uri("irc.freenode.net", 6667) );
-        irc.nick = "nabot";
-        irc.realname = "Damian Ziemba";
-        irc.user = "nabot 8 * :http://driv.pl";
-        irc.channel = ["dragonov"];
+        auto irc = new IrcSession(new Uri("irc.freenode.net:6667"));
+        irc.connect();
+        scope(exit) irc.close();
         
-        irc.onMsgReceive = (IrcMsg msg)
-        { 
-            if (msg.channel == "dragonov")
-            {
-                string respMsg;
-                
-                switch (msg.message)
-                {
-                    case "?gtkd":
-                        respMsg = "Gtk+ bindings for D programming language: http://dsource.org/project/gtkd";
-                        break;
-                    case "?d":
-                        respMsg = "D Programming Language: http://d-programming-language.org";
-                        break;
-                    case "nabot: hi":
-                    case "nabot: yo":
-                    case "nabot: hello":
-                    case "hello nabot":
-                    case "hi nabot":
-                    case "yo nabot":
-                        respMsg = "Hi, " ~ msg.author.nick ~ " : " ~ msg.author.host;
-                        break;
-                    default:
-                            return;
-                    break;
-                }
-                    
-                irc.sendMsg("dragonov", respMsg);
-            }
-        };
-       
-            
-        irc.open();
+        irc.auth(IrcUser("Robik_t", "Robik_t", "real name"));
+        irc.join("robik");
+        irc.OnMessageRecv = (IrcMessage msg) { writeln("--- ", msg.message); };
+        irc.OnConnectionLost = (){ writeln("Connection lost :("); };
         
-        IrcMsg msg;
-        while (true)
+        bool loop = true;
+        do
         {
-            msg = irc.read();
-        }
-        
-        irc.close();
+            loop = irc.read();
+        }while(loop);
     }
 }
-
-
-
-
-
-
-
-
-
-
