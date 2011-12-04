@@ -11,13 +11,13 @@ struct IrcUser
 {
     string user;
     string nick;
-    string realname;
+    string host;
     
-    public this(string _user, string _nick, string _realname)
+    public this(string _user, string _nick, string _host = "")
     {
         user = _user;
         nick = _nick;
-        realname = _realname;
+        host = _host;
     }
 }
 
@@ -25,13 +25,20 @@ struct IrcMessage
 {
     string channel;
     string message;
-    IrcTarget author;
+    IrcUser author;
+    
+    public this(string _channel, string _message, IrcUser _author)
+    {
+        channel = _channel;
+        message = _message;
+        author = _author;
+    }
 }
 
 struct IrcEvents
 {
-    void delegate(IrcTarget usr) OnJoin;
-    void delegate(IrcTarget usr) OnPart;
+    void delegate(IrcUser usr) OnJoin;
+    void delegate(IrcUser usr) OnPart;
     
     //void delegate() OnMeJoin;
     //void delegate() OnMePart;
@@ -44,16 +51,17 @@ struct IrcEvents
 struct IrcResponse
 {
     string command;
-    IrcTarget target;
+    IrcUser target;
     string[] params;
+    
+    public this(string _command, string[] _params, IrcUser _target)
+    {
+        command = _command;
+        params  = _params;
+        target = _target;
+    }
 }
 
-struct IrcTarget
-{
-    string host;
-    string user;
-    string nick;
-}
 
 class IrcSession
 {
@@ -81,10 +89,10 @@ class IrcSession
         _writer = new SocketStream(_sock);
     }
     
-    public void auth(IrcUser user)
+    public void auth(IrcUser user, string realname)
     {
         _user = user;
-        send("USER " ~ user.user ~ " 8 * :" ~ user.realname);
+        send("USER " ~ user.user ~ " 8 * :" ~ realname);
         send("NICK " ~ user.nick);
     }
     
@@ -98,7 +106,7 @@ class IrcSession
         send("PART #"~channel);
     }
     
-    public void me(string channel, string msg)
+    public void action(string channel, string msg)
     {
         sendMessage(channel, "\x01ACTION " ~ msg ~ "\x01");
     }
@@ -111,7 +119,7 @@ class IrcSession
     public bool read()
     {
         string line = cast(string)_reader.readLine();
-        //writeln("> ", line);
+        writeln("> ", line);
         if(!_sock.isAlive() || !line.length)
         {
             OnConnectionLost();
@@ -124,9 +132,9 @@ class IrcSession
         return true;
     }
     
-    public void close()
+    public void close(string msg = "")
     {    
-        send("QUIT");
+        send("QUIT :" ~ msg);
         _reader.close();
         _writer.close();
     }
@@ -179,44 +187,14 @@ class IrcSession
         }
         
         command = toUpper(params[0]);
-        params = params[1..$];
-        
-        switch(command)
-        {
-            case "001":
-                // success
-                break;
+        params = params[1..$];    
             
-            case "433":
-                // nick name in use
-                writeln("Nickname in use!");
-                break;
-            
-            case "JOIN":
-                if(OnJoin !is null)
-                    OnJoin(parseTarget(target));
-                break;
-                
-            case "PART":
-                if(OnPart !is null)
-                    OnPart(parseTarget(target));
-                break;
-                
-            default:
-        }
-            
-            
-        
-        auto res = IrcResponse();
-        res.target = parseTarget(target);
-        res.command = command;
-        res.params = params;
-        return res;
+        return IrcResponse(command, params, parseTarget(target));
     }
     
-    protected IrcTarget parseTarget(string target)
+    protected IrcUser parseTarget(string target)
     {
-        IrcTarget res = IrcTarget();
+        IrcUser res = IrcUser();
         
         size_t userpos = target.indexOf('!');
         if(userpos == -1)
@@ -245,33 +223,41 @@ class IrcSession
     
     protected void parseResponse(IrcResponse r)
     {
-        // Temp
-        if(r.command == "433")
-            writeln("Nickname in use");
-        
-        if(r.command == "PING")
-            send("PONG :" ~ r.params[0]);
-        else if(r.command == "PRIVMSG")
+        switch(r.command)
         {
-            if(r.params.length != 2)
-                return;
+            case "001":
+                // success
+                break;
+            
+            case "433":
+                // nick name in use
+                writeln("Nickname in use!");
+                break;
+            
+            case "JOIN":
+                if(OnJoin !is null)
+                    OnJoin(r.target);
+                break;
                 
-            string txt = r.params[1];
+            case "PART":
+                if(OnPart !is null)
+                    OnPart(r.target);
+                break;
             
-            if(txt.length >= 7 && txt[0..7] == "\x01ACTION" )
-            { 
-                // CHANGE v
-                writeln(r.target.nick ~" * " ~txt[8..$-1]);
-                return;
-            }
+            case "PING":
+                send("PONG :" ~ r.params[0]);
+                break;
             
-            auto msg = IrcMessage();
-            msg.author = r.target;
-            msg.message = txt;
-            
-            if(OnMessageRecv !is null)
-                OnMessageRecv(msg);
-        }    
+            case "PRIVMSG":
+                if(OnMessageRecv !is null)
+                {
+                    auto msg = IrcMessage(r.params[0], r.params[1], r.target);
+                    OnMessageRecv(msg);
+                }
+                break;    
+                
+            default:
+        }
     }
     
     protected string parseUserName(string target)
@@ -295,20 +281,20 @@ debug(Irc)
         irc.connect();
         scope(exit) irc.close();
         
-        irc.auth(IrcUser("Robik__", "Robik__", "real name"));
+        irc.auth(IrcUser("Robik__", "Robik__"), "real name");
         irc.join("dragonov");
         
         irc.OnMessageRecv = (IrcMessage msg)
         { 
             if(msg.message == "!bye")
-                irc.close();
+                irc.close("as you wish");
                 
-            writefln("<%s> %s", msg.author.nick, msg.message);
+            writefln("[%s]<%s> %s", msg.channel, msg.author.nick, msg.message);
         };
         irc.OnConnectionLost = (){ writeln("Connection lost :<"); };
-        irc.OnJoin = (IrcTarget usr)
-            { writefln("[%s] joined the channel", usr.nick); irc.me("dragonov", "works"); };
-        irc.OnPart = (IrcTarget usr)
+        irc.OnJoin = (IrcUser usr)
+            { writefln("[%s] joined the channel", usr.nick); irc.action("dragonov", "works"); };
+        irc.OnPart = (IrcUser usr)
             { writefln("[%s] left the channel", usr.nick); };
         
         bool loop = true;
