@@ -100,7 +100,7 @@ class IrcSession
     
     public void me(string channel, string msg)
     {
-        sendMessage(channel, "\x01ACTION" ~ msg ~ "\x01");
+        sendMessage(channel, "\x01ACTION " ~ msg ~ "\x01");
     }
     
     public void sendMessage(string channel, string msg)
@@ -307,13 +307,11 @@ debug(Irc)
         };
         irc.OnConnectionLost = (){ writeln("Connection lost :<"); };
         irc.OnJoin = (IrcTarget usr)
-            { writefln("[%s] joined the channel", usr.nick); };
+            { writefln("[%s] joined the channel", usr.nick); irc.me("dragonov", "works"); };
         irc.OnPart = (IrcTarget usr)
             { writefln("[%s] left the channel", usr.nick); };
         
         bool loop = true;
-        
-        irc.me("dragonov", "works");
         do
         {
             loop = irc.read();
