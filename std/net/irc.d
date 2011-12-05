@@ -84,7 +84,7 @@ struct IrcMessage
      * Returns:
      *  Channel name
      */
-    public @property channel() const
+    public @property channel()
     {
         return _channel;
     }
@@ -95,7 +95,7 @@ struct IrcMessage
      * Returns:
      *  Message contents
      */
-    public @property message() const
+    public @property message()
     {
         return _message;
     }
@@ -112,15 +112,6 @@ struct IrcMessage
     }
 }
 
-struct IrcEvents
-{
-    void delegate(string channel, IrcUser usr) OnJoin;
-    void delegate(string channel, IrcUser usr) OnPart;
-    
-    void delegate() OnConnectionLost;
-    void delegate(IrcMessage msg) OnMessageRecv;
-    void delegate(string msg) OnMessageSend;
-}
 
 /**
  * Represents IRC response
@@ -172,10 +163,15 @@ class IrcSession
         SocketStream _writer;
         Uri _uri;
         IrcUser _user;
-        IrcEvents events;
     }
-    public alias events this; 
     
+    void delegate(string channel, IrcUser usr) OnJoin;
+    void delegate(string channel, IrcUser usr) OnPart;
+    
+    void delegate() OnConnectionLost;
+    void delegate(IrcMessage msg) OnMessageRecv;
+    void delegate(string msg) OnMessageSend; 
+     
     /**
      * Creates new IRC session
      */
@@ -559,7 +555,7 @@ debug(Irc)
         };
         irc.OnConnectionLost = (){ writeln("Connection lost :<"); };
         irc.OnJoin = (string channel, IrcUser usr)
-            { writefln("[%s] joined the %s", usr.nick, channel); irc.nick("nubot"); };
+            { writefln("[%s] joined the %s", usr.nick, channel); irc.notice(usr.nick, "Welcome"); };
         irc.OnPart = (string channel, IrcUser usr)
             { writefln("[%s] left the %s", usr.nick, channel); };
         
