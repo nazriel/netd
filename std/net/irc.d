@@ -1,5 +1,11 @@
+/**
+ * std.net IRC client
+ * 
+ * Authors:
+ *  
+ */
 module std.net.irc;
-/// TODO: FIX Channel data in callbacks etc
+/// TODO: \x03COLORCODE?
 import std.socket : TcpSocket, InternetAddress;
 import std.socketstream;
 import std.stdio;
@@ -7,53 +13,144 @@ import std.string : split, indexOf, toUpper;
 import std.net.uri;
 
 
+/**
+ * Represents IRC user
+ */
 struct IrcUser
 {
+    /**
+     * User name
+     */
     string user;
+    
+    /**
+     * Nick name
+     */
     string nick;
+    
+    /**
+     * Host name
+     */
     string host;
     
+    /**
+     * Creates new user object
+     * 
+     * Params:
+     *  user    =   User name
+     *  nick    =   Nick name
+     *  host    =   Host name
+     */
     public this(string _user, string _nick, string _host = "")
     {
         user = _user;
         nick = _nick;
         host = _host;
     }
+    
+    
 }
 
+/**
+ * Represents IRC message
+ */
 struct IrcMessage
 {
-    string channel;
-    string message;
-    IrcUser author;
-    
-    public this(string _channel, string _message, IrcUser _author)
+    private
     {
-        channel = _channel;
-        message = _message;
-        author = _author;
+        string  _channel;
+        string  _message;
+        IrcUser _author;
+    }
+    
+    /**
+     * Creates new IRC message object
+     * 
+     * Params:
+     *  channel =   Channel name
+     *  message =   Message contents
+     *  author  =   Message author
+     */
+    public this(string channel, string message, IrcUser author)
+    {
+        _channel = channel;
+        _message = message;
+        _author = author;
+    }
+    
+    /**
+     * Returns channel name
+     * 
+     * Returns:
+     *  Channel name
+     */
+    public @property channel() const
+    {
+        return _channel;
+    }
+    
+    /**
+     * Returns message contents
+     * 
+     * Returns:
+     *  Message contents
+     */
+    public @property message() const
+    {
+        return _message;
+    }
+    
+    /**
+     * Returns message author data
+     * 
+     * Returns:
+     *  Author data
+     */
+    public @property author()
+    {
+        return _author;
     }
 }
 
 struct IrcEvents
 {
-    void delegate(IrcUser usr) OnJoin;
-    void delegate(IrcUser usr) OnPart;
-    
-    //void delegate() OnMeJoin;
-    //void delegate() OnMePart;
+    void delegate(string channel, IrcUser usr) OnJoin;
+    void delegate(string channel, IrcUser usr) OnPart;
     
     void delegate() OnConnectionLost;
     void delegate(IrcMessage msg) OnMessageRecv;
     void delegate(string msg) OnMessageSend;
 }
 
+/**
+ * Represents IRC response
+ */
 struct IrcResponse
 {
+    /**
+     * IRC server response command
+     */
     string command;
-    IrcUser target;
-    string[] params;
     
+    /**
+     * Event target, user or host
+     */
+    IrcUser target;
+    
+    /**
+     * Command params, 1st is (not sure if always) channel
+     */
+    string[] params;
+        
+    
+    /**
+     * Creates new Irc response object
+     * 
+     * Params:
+     *  _command    =  Response command
+     *  _params =   Command params
+     *  _target = Event source
+     */
     public this(string _command, string[] _params, IrcUser _target)
     {
         command = _command;
@@ -63,6 +160,9 @@ struct IrcResponse
 }
 
 
+/**
+ * Represents IRC session
+ */
 class IrcSession
 {
     protected
@@ -76,12 +176,18 @@ class IrcSession
     }
     public alias events this; 
     
-    
+    /**
+     * Creates new IRC session
+     */
     this(Uri uri)
     {
         _uri = uri;
     }
     
+    
+    /**
+     * Connects to the server
+     */
     public void connect()
     {
         _sock = new TcpSocket(new InternetAddress(_uri.host, _uri.port));
@@ -89,6 +195,13 @@ class IrcSession
         _writer = new SocketStream(_sock);
     }
     
+    /**
+     * Authorizes user
+     * 
+     * Params:
+     *  user    =   User data you want to exist with
+     *  realname    =   Real name
+     */
     public void auth(IrcUser user, string realname)
     {
         _user = user;
@@ -96,30 +209,143 @@ class IrcSession
         send("NICK " ~ user.nick);
     }
     
+    /**
+     * Joins room
+     * 
+     * Params:
+     *  channel =   Channel name, including #
+     */
     public void join(string channel)
     {
-        send("JOIN #" ~channel);
+        writeln("Joining ", channel);
+        send("JOIN " ~channel);
     }
     
+    /**
+     * Joins rooms
+     * 
+     * Params:
+     *  ... =   Room names
+     */
+    public void join(string[] channels...)
+    {
+        foreach(channel; channels)
+            join(channel);
+    }
+    
+    /**
+     * Leaves rooms
+     * 
+     * Params:
+     *  channel =   Channel name to leave
+     */
     public void part(string channel)
     {
-        send("PART #"~channel);
+        send("PART "~channel);
     }
     
+    /**
+     * Sends action command, equivalent to /me
+     * 
+     * Params:
+     *  channel =   Channel to send action
+     *  msg =   Action contents
+     */
     public void action(string channel, string msg)
     {
         sendMessage(channel, "\x01ACTION " ~ msg ~ "\x01");
     }
     
+    /**
+     * Sends message to channel
+     * 
+     * Params:
+     *  channel =   Channel name
+     *  msg =   Message contents
+     */
     public void sendMessage(string channel, string msg)
     {
-        send("PRIVMSG #"~channel~" :"~msg);
+        send("PRIVMSG "~channel~" :"~msg);
     }
     
+    /**
+     * Sends message to channel
+     * 
+     * Params:
+     *  msg = Message to send
+     */
+    public void sendMessage(IrcMessage msg)
+    {
+        send("PRIVMSG "~msg.channel~" :"~msg.message);
+    }
+    
+    
+    /**
+     * Lists users on the channel
+     * 
+     * Todo:
+     *  Add callbacks
+     * 
+     * Params:
+     *  channel =   Channel name
+     */
+    public void listUsers(string channel)
+    {
+        send("LIST " ~ channel);
+    }
+    
+    /// ditto
+    alias listUsers names;
+    
+    /**
+     * Request server to send Message Of the Day
+     */
+    public void msod()
+    {
+        send("MOTD " ~ _uri.host);
+    }
+    
+    /**
+     * Changes nick
+     * 
+     * Params:
+     *  nick    =   New nick
+     */
+    public void nick(string nick)
+    {
+        send("NICK "~nick);
+    }
+    
+    /**
+     * Sends connection password
+     * 
+     * Params:
+     *  pass    =   Password
+     */
+    public void pass(string pass)
+    {
+        send("PASS "~pass);
+    }
+    
+    /**
+     * Sends notice to target
+     * 
+     * Params:
+     *  target  =   Notice target
+     *  msg =   Notice contents
+     */
+    public void notice(string target, string msg)
+    {
+        send("NOTICE "~target ~ " " ~msg);
+    }
+    
+    /**
+     * Reads data from IRC
+     */
     public bool read()
     {
         string line = cast(string)_reader.readLine();
-        writeln("> ", line);
+        //writeln("> ", line);
         if(!_sock.isAlive() || !line.length)
         {
             OnConnectionLost();
@@ -132,14 +358,38 @@ class IrcSession
         return true;
     }
     
-    public void close(string msg = "")
+    /**
+     * "Brutally" closes the connection
+     */
+    public void close()
     {    
-        send("QUIT :" ~ msg);
+        send("QUIT");
+        _sock.close();
+        _reader.close();
+        _writer.close();        
+    }
+    
+    /**
+     * Closes the connection
+     * 
+     * Params:
+     *  msg =   Quit message
+     */
+    public void quit(string msg = "")
+    {
+        send("QUIT :"~msg);
+        _writer.readLine();
         _reader.close();
         _writer.close();
     }
     
-    protected void send(string msg)
+    /**
+     * Sends raw command to IRC server
+     * 
+     * Params:
+     *  msg =   Command to send
+     */
+    public void send(string msg)
     {
         writeln("< ",msg);
         
@@ -156,6 +406,15 @@ class IrcSession
      * Stéphan Kochen <stephan@kochen.nl>
      * Portions created by the Initial Developer are Copyright (C) 2006
      * the Initial Developer. All Rights Reserved.
+     */
+    /**
+     * Parses IRC server response line
+     * 
+     * Params:
+     *  line = Line to parse
+     * 
+     * Returns:
+     *  Parsed response
      */
     protected IrcResponse parseLine(string line)
     {
@@ -192,6 +451,15 @@ class IrcSession
         return IrcResponse(command, params, parseTarget(target));
     }
     
+    /**
+     * Parses target to user data
+     * 
+     * Params:
+     *  target = Target to parse
+     * 
+     * Returns:
+     *  IrcUser
+     */
     protected IrcUser parseTarget(string target)
     {
         IrcUser res = IrcUser();
@@ -221,6 +489,12 @@ class IrcSession
         return res;
     }
     
+    /**
+     * Operate on parsed IRC respones
+     * 
+     * Params:
+     *  r   =   Parsed response
+     */
     protected void parseResponse(IrcResponse r)
     {
         switch(r.command)
@@ -236,12 +510,12 @@ class IrcSession
             
             case "JOIN":
                 if(OnJoin !is null)
-                    OnJoin(r.target);
+                    OnJoin(r.params[0], r.target);
                 break;
                 
             case "PART":
                 if(OnPart !is null)
-                    OnPart(r.target);
+                    OnPart(r.params[0], r.target);
                 break;
             
             case "PING":
@@ -258,19 +532,8 @@ class IrcSession
                 
             default:
         }
-    }
-    
-    protected string parseUserName(string target)
-    {
-        size_t at = target.indexOf('@');
-        
-        if(at != -1)
-        {
-            return target[1..at];
-        }
-        else
-            return null;
-    }
+    }   
+
 }
 
 debug(Irc)
@@ -281,21 +544,24 @@ debug(Irc)
         irc.connect();
         scope(exit) irc.close();
         
-        irc.auth(IrcUser("Robik__", "Robik__"), "real name");
-        irc.join("dragonov");
+        irc.auth(IrcUser("nubot", "nubot"), "real name");
+        irc.join("#dragonov");
         
         irc.OnMessageRecv = (IrcMessage msg)
         { 
             if(msg.message == "!bye")
-                irc.close("as you wish");
+            {
+                irc.quit("Bye!");
+                return;
+            }
                 
             writefln("[%s]<%s> %s", msg.channel, msg.author.nick, msg.message);
         };
         irc.OnConnectionLost = (){ writeln("Connection lost :<"); };
-        irc.OnJoin = (IrcUser usr)
-            { writefln("[%s] joined the channel", usr.nick); irc.action("dragonov", "works"); };
-        irc.OnPart = (IrcUser usr)
-            { writefln("[%s] left the channel", usr.nick); };
+        irc.OnJoin = (string channel, IrcUser usr)
+            { writefln("[%s] joined the %s", usr.nick, channel); irc.nick("nubot"); };
+        irc.OnPart = (string channel, IrcUser usr)
+            { writefln("[%s] left the %s", usr.nick, channel); };
         
         bool loop = true;
         do
