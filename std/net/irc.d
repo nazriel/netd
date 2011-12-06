@@ -47,9 +47,47 @@ struct IrcUser
         nick = _nick;
         host = _host;
     }
-    
-    
 }
+
+struct IrcUserData
+{
+    /**
+     * User name
+     */
+    string user;
+    
+    /**
+     * Nick name
+     */
+    string nick;
+    
+    /**
+     * Host name
+     */
+    string host;
+    
+    /**
+     * Server
+     */
+    string server;
+    
+    
+    /**
+     * Creates new user object
+     * 
+     * Params:
+     *  user    =   User name
+     *  nick    =   Nick name
+     *  host    =   Host name
+     *  server  =   Server
+     */
+    public this(string _user, string _nick, string _host = "")
+    {
+        user = _user;
+        nick = _nick;
+        host = _host;
+    }
+} 
 
 /**
  * Represents IRC message
@@ -318,6 +356,21 @@ class IrcSession
         send("PRIVMSG "~msg.channel~" :"~msg.message);
     }
     
+    /**
+     * Requests server to return WHOIS data
+     */
+    public void whois(string nick)
+    {
+        send("WHOIS "~nick);
+    }
+    
+    /**
+     * Requests server to return WHO data
+     */
+    public void who(string nick)
+    {
+        send("WHO " ~nick);
+    }
     
     /**
      * Lists users on the channel
@@ -330,7 +383,7 @@ class IrcSession
      */
     public void listUsers(string channel)
     {
-        send("LIST " ~ channel);
+        send("NAMES " ~ channel);
     }
     
     /// ditto
@@ -395,25 +448,33 @@ class IrcSession
     }
     
     /**
-     * Reads data from IRC
+     * Reads data from IRC and parses response
      */
-    public bool read()
+    public void read()
+    {
+        auto line = rawRead();
+        
+        auto res = parseLine(line);
+        parseResponse(res);
+    }
+    
+    /**
+     * Reads data from Irc
+     */
+    public string rawRead()
     {
         string line = cast(string) _ss.readLine();
-        //writeln("> ", line);
+        writeln("> ", line);
         if(!_sock.isAlive() || !line.length)
         {
             _alive = false;
             if ( OnConnectionLost !is null )
-            	OnConnectionLost();
-            	
-            return false;
+                OnConnectionLost();
+                
+            return null;
         }
         
-        auto res = parseLine(line);
-        parseResponse(res);
-            
-        return true;
+        return line;
     }
     
     /**
@@ -585,8 +646,79 @@ class IrcSession
                 
             default:
         }
-    }   
-
+    }
+    
+    /**
+     * Returns list of users on the channel
+     */
+    public string[] getUsers(string channel)
+    {
+        listUsers(channel);
+        string[] users;
+        
+        while(alive)
+        {
+            auto line = rawRead();
+            auto res = parseLine(line);
+            
+            if(res.command == "366")
+                break;
+            else if(res.command == "353")
+            {
+                auto pos = line[1..$].indexOf(':');
+                if(pos == -1)
+                    continue;
+                else
+                {
+                    users ~= line[pos+2 .. $].split(" ");
+                }
+            }
+            else if(res.command == "332")
+                continue;
+            else
+                break;
+        }
+        
+        return users;
+    }
+    
+    /**
+     * Returns user data
+     */
+    public IrcUserData getUserData(string nick)
+    {
+        whois(nick);
+        IrcUserData usr;
+        usr.nick = nick;
+        
+        while(alive)
+        {
+            auto line = rawRead();
+            auto res = parseLine(line);
+            
+            if(res.command == "318")
+                break;
+            
+            switch(res.command)
+            {
+                case "330":
+                    usr.user = res.params[2];
+                    break;
+                
+                case "312":
+                    usr.server = res.params[2];
+                    break;
+                
+                case "311":
+                    usr.host = res.params[3];
+                    break;    
+                
+                default:    
+            }
+        }
+        
+        return usr;
+    }
 }
 
 debug(Irc)
@@ -607,12 +739,21 @@ debug(Irc)
                 irc.quit("Bye!");
                 return;
             }
+            
+            if(msg.message == "!testList")
+                writeln("Users: ", irc.getUsers("#dragonov"));
+            
+            if(msg.message == "!testWhois")
+                irc.getUserData("Robik");
+            
+            if(msg.message == "!testWho")
+                irc.who("Robik");    
                 
             writefln("[%s]<%s> %s", msg.channel, msg.author.nick, msg.message);
         };
         irc.OnConnectionLost = (){ writeln("Connection lost :<"); };
         irc.OnJoin = (string channel, IrcUser usr)
-            { writefln("[%s] joined the %s", usr.nick, channel); irc.invite("Robik", "#testroom"); };
+            { writefln("[%s] joined the %s", usr.nick, channel);; };
         irc.OnPart = (string channel, IrcUser usr)
             { writefln("[%s] left the %s", usr.nick, channel); };
         
