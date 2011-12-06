@@ -84,7 +84,7 @@ struct IrcMessage
      * Returns:
      *  Channel name
      */
-    public @property channel() const
+    public @property channel()
     {
         return _channel;
     }
@@ -95,7 +95,7 @@ struct IrcMessage
      * Returns:
      *  Message contents
      */
-    public @property message() const
+    public @property message()
     {
         return _message;
     }
@@ -110,16 +110,6 @@ struct IrcMessage
     {
         return _author;
     }
-}
-
-struct IrcEvents
-{
-    void delegate(string channel, IrcUser usr) OnJoin;
-    void delegate(string channel, IrcUser usr) OnPart;
-    
-    void delegate() OnConnectionLost;
-    void delegate(IrcMessage msg) OnMessageRecv;
-    void delegate(string msg) OnMessageSend;
 }
 
 /**
@@ -168,33 +158,66 @@ class IrcSession
     protected
     {
         TcpSocket _sock;
-        SocketStream _reader;
-        SocketStream _writer;
+        SocketStream _ss;
         Uri _uri;
         IrcUser _user;
-        IrcEvents events;
+        string _bind;
     }
-    public alias events this; 
     
+    void delegate(string channel, IrcUser usr) OnJoin;
+    void delegate(string channel, IrcUser usr) OnPart;
+    
+    void delegate() OnConnectionLost;
+    void delegate(IrcMessage msg) OnMessageRecv;
+    void delegate(string msg) OnMessageSend;
+    
+    bool _alive = false;
     /**
      * Creates new IRC session
      */
     this(Uri uri)
     {
         _uri = uri;
+        this();
     }
     
+    /// ditto
+    protected this()
+    {
+        _sock = new TcpSocket();
+    }
+
+    /**
+    * Checks if connection is still working
+    */
+    @property bool alive() const
+    {
+        return _alive;
+    }
     
     /**
      * Connects to the server
      */
     public void connect()
     {
-        _sock = new TcpSocket(new InternetAddress(_uri.host, _uri.port));
-        _reader = new SocketStream(_sock);
-        _writer = new SocketStream(_sock);
+        if ( _bind !is null )
+        {
+            _sock.bind(new InternetAddress(_bind, InternetAddress.PORT_ANY));
+        }
+
+        _sock.connect(new InternetAddress(_uri.host, _uri.port));
+
+        _ss = new SocketStream(_sock);
+        _alive = true;
     }
-    
+
+    /**
+    * Binds connection
+    */
+    public void bind(string ip)
+    {
+        _bind = ip;
+    }
     /**
      * Authorizes user
      * 
@@ -336,7 +359,7 @@ class IrcSession
      */
     public void notice(string target, string msg)
     {
-        send("NOTICE "~target ~ " " ~msg);
+        send("NOTICE "~target ~ " :" ~msg);
     }
     
     /**
@@ -344,11 +367,14 @@ class IrcSession
      */
     public bool read()
     {
-        string line = cast(string)_reader.readLine();
+        string line = cast(string) _ss.readLine();
         //writeln("> ", line);
         if(!_sock.isAlive() || !line.length)
         {
-            OnConnectionLost();
+            _alive = false;
+            if ( OnConnectionLost !is null )
+            	OnConnectionLost();
+            	
             return false;
         }
         
@@ -363,10 +389,7 @@ class IrcSession
      */
     public void close()
     {    
-        send("QUIT");
-        _sock.close();
-        _reader.close();
-        _writer.close();        
+        quit();      
     }
     
     /**
@@ -377,10 +400,10 @@ class IrcSession
      */
     public void quit(string msg = "")
     {
-        send("QUIT :"~msg);
-        _writer.readLine();
-        _reader.close();
-        _writer.close();
+        send("QUIT" ~ (msg != "" ? " :" ~ msg : ""));
+        _alive = false;
+        _ss.readLine();
+        _ss.close();
     }
     
     /**
@@ -396,7 +419,7 @@ class IrcSession
         if(OnMessageSend !is null)
             OnMessageSend(msg);
         
-        _writer.writeLine(msg);
+        _ss.writeLine(msg);
     }
     
     /*
