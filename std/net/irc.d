@@ -112,10 +112,6 @@ struct IrcMessage
     }
 }
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 5ce490fb7cd6bf42cedf26428927b6e0610e11dd
 /**
  * Represents IRC response
  */
@@ -165,10 +161,7 @@ class IrcSession
         SocketStream _ss;
         Uri _uri;
         IrcUser _user;
-<<<<<<< HEAD
         string _bind;
-=======
->>>>>>> 5ce490fb7cd6bf42cedf26428927b6e0610e11dd
     }
     
     void delegate(string channel, IrcUser usr) OnJoin;
@@ -176,14 +169,9 @@ class IrcSession
     
     void delegate() OnConnectionLost;
     void delegate(IrcMessage msg) OnMessageRecv;
-<<<<<<< HEAD
     void delegate(string msg) OnMessageSend;
     
     bool _alive = false;
-=======
-    void delegate(string msg) OnMessageSend; 
-     
->>>>>>> 5ce490fb7cd6bf42cedf26428927b6e0610e11dd
     /**
      * Creates new IRC session
      */
