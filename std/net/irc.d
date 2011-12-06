@@ -268,6 +268,22 @@ class IrcSession
     }
     
     /**
+     * Tells server client is away
+     */
+    public void away(string msg)
+    {
+        send("AWAY :" ~ msg);
+    }
+    
+    /**
+     * Tells server client is back
+     */ 
+    public void away()
+    {
+        send("AWAY");
+    }
+    
+    /**
      * Sends action command, equivalent to /me
      * 
      * Params:
@@ -321,11 +337,27 @@ class IrcSession
     alias listUsers names;
     
     /**
+     * Requests server to list channels
+     */
+    public void listChannels()
+    {
+        send("LIST");
+    }
+    
+    /**
      * Request server to send Message Of the Day
      */
     public void msod()
     {
         send("MOTD " ~ _uri.host);
+    }
+    
+    /**
+     * Invites user to channel
+     */
+    public void invite(string user, string channel)
+    {
+        send("INVITE " ~ user ~ " " ~ channel);
     }
     
     /**
@@ -385,19 +417,17 @@ class IrcSession
     }
     
     /**
-     * "Brutally" closes the connection
+     * Closes the connection
+     * 
+     * Params:
+     *  msg =   Quit message
      */
     public void close()
     {    
         quit();      
     }
     
-    /**
-     * Closes the connection
-     * 
-     * Params:
-     *  msg =   Quit message
-     */
+    /// ditto 
     public void quit(string msg = "")
     {
         send("QUIT" ~ (msg != "" ? " :" ~ msg : ""));
@@ -582,14 +612,13 @@ debug(Irc)
         };
         irc.OnConnectionLost = (){ writeln("Connection lost :<"); };
         irc.OnJoin = (string channel, IrcUser usr)
-            { writefln("[%s] joined the %s", usr.nick, channel); irc.notice(usr.nick, "Welcome"); };
+            { writefln("[%s] joined the %s", usr.nick, channel); irc.invite("Robik", "#testroom"); };
         irc.OnPart = (string channel, IrcUser usr)
             { writefln("[%s] left the %s", usr.nick, channel); };
         
-        bool loop = true;
-        do
+        while(irc.alive)
         {
-            loop = irc.read();
-        }while(loop);
+            irc.read();
+        }
     }
 }
