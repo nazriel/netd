@@ -10,6 +10,7 @@ import std.socket : TcpSocket, InternetAddress;
 import std.socketstream;
 import std.stdio;
 import std.string : split, indexOf, toUpper;
+import std.array : join;
 import std.net.uri;
 
 
@@ -46,6 +47,43 @@ struct IrcUser
         user = _user;
         nick = _nick;
         host = _host;
+    }
+}
+
+/**
+ * Represents IRC channel
+ */
+struct IrcChannel
+{
+    /**
+     * Channel name
+     */
+    string name;
+    
+    /**
+     * Channel mode, string contains number not sure if its mode for 100%
+     */
+    string mode;
+    
+    /**
+     * Channel description
+     */
+    string desc;
+    
+    
+    /**
+     * Creates new IrcChannel object
+     *
+     * Params:
+     *  _name   =   Channel name
+     *  _mode   =   Channel mode
+     *  _desc   =   Channel description
+     */
+    public this(string _name, string _mode, string _desc)
+    {
+        name = _name;
+        mode = _mode;
+        desc = _desc; 
     }
 }
 
@@ -191,7 +229,7 @@ struct IrcResponse
 /**
  * Represents IRC session
  */
-class IrcSession
+abstract class IrcSession
 {
     protected
     {
@@ -201,13 +239,6 @@ class IrcSession
         IrcUser _user;
         string _bind;
     }
-    
-    void delegate(string channel, IrcUser usr) OnJoin;
-    void delegate(string channel, IrcUser usr) OnPart;
-    
-    void delegate() OnConnectionLost;
-    void delegate(IrcMessage msg) OnMessageRecv;
-    void delegate(string msg) OnMessageSend;
     
     bool _alive = false;
     /**
@@ -250,12 +281,16 @@ class IrcSession
     }
 
     /**
-    * Binds connection
-    */
+     * Binds connection
+     *
+     * Params:
+     *  ip  =   Ip to bind to
+     */
     public void bind(string ip)
     {
         _bind = ip;
     }
+    
     /**
      * Authorizes user
      * 
@@ -392,9 +427,16 @@ class IrcSession
     /**
      * Requests server to list channels
      */
-    public void listChannels()
+    public void listChannels(string[] channels...)
     {
-        send("LIST");
+        if(channels.length == 0)
+        {
+            send("LIST");
+        }
+        else
+        {
+            send("LIST " ~ .join(channels, ","));
+        }
     }
     
     /**
@@ -464,12 +506,11 @@ class IrcSession
     public string rawRead()
     {
         string line = cast(string) _ss.readLine();
-        writeln("> ", line);
+        //writeln("> ", line);
         if(!_sock.isAlive() || !line.length)
         {
             _alive = false;
-            if ( OnConnectionLost !is null )
-                OnConnectionLost();
+            onConnectionLost();
                 
             return null;
         }
@@ -506,9 +547,7 @@ class IrcSession
     public void send(string msg)
     {
         writeln("< ",msg);
-        
-        if(OnMessageSend !is null)
-            OnMessageSend(msg);
+        onMessageSend(msg);
         
         _ss.writeLine(msg);
     }
@@ -622,26 +661,21 @@ class IrcSession
                 writeln("Nickname in use!");
                 break;
             
-            case "JOIN":
-                if(OnJoin !is null)
-                    OnJoin(r.params[0], r.target);
+            case "JOIN":    
+                onJoin(r.params[0], r.target);
                 break;
                 
-            case "PART":
-                if(OnPart !is null)
-                    OnPart(r.params[0], r.target);
+            case "PART":    
+                onPart(r.params[0], r.target);
                 break;
             
             case "PING":
                 send("PONG :" ~ r.params[0]);
                 break;
             
-            case "PRIVMSG":
-                if(OnMessageRecv !is null)
-                {
-                    auto msg = IrcMessage(r.params[0], r.params[1], r.target);
-                    OnMessageRecv(msg);
-                }
+            case "PRIVMSG":    
+                auto msg = IrcMessage(r.params[0], r.params[1], r.target);
+                onMessageRecv(msg);
                 break;    
                 
             default:
@@ -684,6 +718,12 @@ class IrcSession
     
     /**
      * Returns user data
+     *
+     * Params:
+     *  nick    =   User to get data
+     *
+     * Returns:
+     *  User data
      */
     public IrcUserData getUserData(string nick)
     {
@@ -719,35 +759,164 @@ class IrcSession
         
         return usr;
     }
+    
+    /**
+     * Returns channels available on the server
+     *
+     * Returns:
+     *  Array of IrcChannel representing single channel
+     */
+    public IrcChannel[] getChannels(string[] _channels...)
+    {
+        listChannels(_channels);
+        IrcChannel[] channels;
+        
+        while(alive)
+        {
+            auto line = rawRead();
+            auto res = parseLine(line);
+            
+            if(res.command == "322")
+            {
+                if(res.params.length > 3)
+                    channels ~= IrcChannel(res.params[1], res.params[2], res.params[3]);
+                else
+                    channels ~= IrcChannel(res.params[1], res.params[2], "");
+            }
+            else if( res.command == "323" )
+                break;
+        }
+        
+        return channels;
+    }
+    
+    
+    /**
+     * Called when someone joins the channel, including you
+     * 
+     * Params:
+     *  channel =   Channel where action happened
+     *  usr     =   User data
+     */
+    abstract void onJoin(string channel, IrcUser usr);
+    
+    /**
+     * Called when someone leaves the channel, including you
+     * 
+     * Params:
+     *  channel =   Channel where action happened
+     *  usr     =   User data
+     */
+    abstract void onPart(string channel, IrcUser usr);
+    
+    /**
+     * Called when lost connection to server
+     */
+    abstract void onConnectionLost();
+    
+    /**
+     * Called when someone send message to channel 
+     * 
+     * Params:
+     *  msg =   Message recevied
+     */
+    abstract void onMessageRecv(IrcMessage msg);
+    
+    /**
+     * Called when send any message to server
+     * 
+     * Params:
+     *  msg =   Message send
+     */
+    abstract void onMessageSend(string msg);
+}
+
+/**
+ * Delegates version
+ */
+class IrcSessionDg : IrcSession
+{
+    void delegate(string channel, IrcUser usr) OnJoin;
+    void delegate(string channel, IrcUser usr) OnPart;
+    
+    void delegate() OnConnectionLost;
+    void delegate(IrcMessage msg) OnMessageRecv;
+    void delegate(string msg) OnMessageSend;
+    
+    this(Uri uri)
+    {
+        super(uri);
+    }
+    
+    void onConnectionLost()
+    {
+        if ( OnConnectionLost !is null )
+            OnConnectionLost();
+    }
+    
+    void onJoin(string channel, IrcUser usr)
+    {
+        if ( OnJoin !is null )
+            OnJoin(channel, usr);
+    }
+    
+    void onPart(string channel, IrcUser usr)
+    {
+        if ( OnPart !is null )
+            OnPart(channel, usr);
+    }
+    
+    void onMessageRecv(IrcMessage msg)
+    {
+        if ( OnMessageRecv !is null )
+            OnMessageRecv(msg);
+    }
+    
+    void onMessageSend(string msg)
+    {
+        if ( OnMessageSend !is null )
+            OnMessageSend(msg);
+    }
 }
 
 debug(Irc)
 {
     void main()
     {
-        auto irc = new IrcSession(new Uri("irc.freenode.net:6667"));
+        auto irc = new IrcSessionDg(new Uri("irc.freenode.net:6667"));
         irc.connect();
         scope(exit) irc.close();
         
-        irc.auth(IrcUser("nubot", "nubot"), "real name");
+        irc.auth(IrcUser("nabot", "nabot"), "real name");
         irc.join("#dragonov");
         
         irc.OnMessageRecv = (IrcMessage msg)
-        { 
+        {
+            auto parts = split(msg.message, " "); 
             if(msg.message == "!bye")
             {
                 irc.quit("Bye!");
                 return;
             }
             
-            if(msg.message == "!testList")
-                writeln("Users: ", irc.getUsers("#dragonov"));
-            
             if(msg.message == "!testWhois")
                 irc.getUserData("Robik");
             
-            if(msg.message == "!testWho")
-                irc.who("Robik");    
+            if(msg.message == "!testList")
+            {
+                auto c = irc.getChannels();
+                
+                foreach(ch; c)
+                    writeln(ch);
+            }
+            
+            if(msg.message == "!testChannel")
+            {
+                auto c = irc.getChannels("#d", "#dbot");
+                
+                foreach(ch; c)
+                    writeln(ch);
+            }
                 
             writefln("[%s]<%s> %s", msg.channel, msg.author.nick, msg.message);
         };
