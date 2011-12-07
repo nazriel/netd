@@ -228,8 +228,25 @@ struct IrcResponse
 
 /**
  * Represents IRC session
+ *
+ * Examples:
+ * ----
+ * auto irc = new IrcSession(new Uri("irc.freenode.net:6667"));
+ * 
+ * irc.connect();
+ * irc.auth(new IrcUser("urname", "urname"));
+ * irc.join("#channel");
+ * 
+ * irc.OnMessageRecv = (IrcMessage msg) { writefln("[%s]<%s> %s", msg.channel,
+ *                                              msg.author.nick, msg.message); };
+ * 
+ * while(irc.alive)
+ * {
+ *      irc.read();
+ * }
+ * ----
  */
-abstract class IrcSession
+class IrcSession
 {
     protected
     {
@@ -313,7 +330,6 @@ abstract class IrcSession
      */
     public void join(string channel)
     {
-        writeln("Joining ", channel);
         send("JOIN " ~channel);
     }
     
@@ -342,6 +358,9 @@ abstract class IrcSession
     
     /**
      * Tells server client is away
+     *
+     * Params:
+     *  msg =   Away message
      */
     public void away(string msg)
     {
@@ -506,11 +525,16 @@ abstract class IrcSession
     public string rawRead()
     {
         string line = cast(string) _ss.readLine();
-        //writeln("> ", line);
+        
+        if(OnRawRead !is null)
+            OnRawRead(line);
+        
         if(!_sock.isAlive() || !line.length)
         {
             _alive = false;
-            onConnectionLost();
+            
+            if(OnConnectionLost !is null)
+                OnConnectionLost();
                 
             return null;
         }
@@ -546,8 +570,8 @@ abstract class IrcSession
      */
     public void send(string msg)
     {
-        writeln("< ",msg);
-        onMessageSend(msg);
+        if(OnRawMessageSend !is null)
+            OnRawMessageSend(msg);
         
         _ss.writeLine(msg);
     }
@@ -658,15 +682,18 @@ abstract class IrcSession
             
             case "433":
                 // nick name in use
-                writeln("Nickname in use!");
+                if(OnNickNameInUse !is null)
+                    OnNickNameInUse();
                 break;
             
-            case "JOIN":    
-                onJoin(r.params[0], r.target);
+            case "JOIN":
+                if(OnJoin !is null)
+                    OnJoin(r.params[0], r.target);
                 break;
                 
-            case "PART":    
-                onPart(r.params[0], r.target);
+            case "PART":
+                if(OnPart !is null)
+                    OnPart(r.params[0], r.target);
                 break;
             
             case "PING":
@@ -675,7 +702,9 @@ abstract class IrcSession
             
             case "PRIVMSG":    
                 auto msg = IrcMessage(r.params[0], r.params[1], r.target);
-                onMessageRecv(msg);
+                
+                if(OnMessageRecv !is null)
+                    OnMessageRecv(msg);
                 break;    
                 
             default:
@@ -798,7 +827,7 @@ abstract class IrcSession
      *  channel =   Channel where action happened
      *  usr     =   User data
      */
-    abstract void onJoin(string channel, IrcUser usr);
+    void delegate(string channel, IrcUser usr) OnJoin;
     
     /**
      * Called when someone leaves the channel, including you
@@ -807,12 +836,20 @@ abstract class IrcSession
      *  channel =   Channel where action happened
      *  usr     =   User data
      */
-    abstract void onPart(string channel, IrcUser usr);
+    void delegate(string channel, IrcUser usr) OnPart;
+    
+    /**
+     * Called when called rawRead
+     *
+     * Params:
+     *  msg = Server response contents
+     */
+    void delegate(string msg) OnRawRead;
     
     /**
      * Called when lost connection to server
      */
-    abstract void onConnectionLost();
+    void delegate() OnConnectionLost;
     
     /**
      * Called when someone send message to channel 
@@ -820,7 +857,7 @@ abstract class IrcSession
      * Params:
      *  msg =   Message recevied
      */
-    abstract void onMessageRecv(IrcMessage msg);
+    void delegate(IrcMessage msg) OnMessageRecv;
     
     /**
      * Called when send any message to server
@@ -828,62 +865,20 @@ abstract class IrcSession
      * Params:
      *  msg =   Message send
      */
-    abstract void onMessageSend(string msg);
+    void delegate(string msg) OnRawMessageSend;
+    
+    /**
+     * Called when specified nickname is in use
+     */
+    void delegate() OnNickNameInUse;
 }
 
-/**
- * Delegates version
- */
-class IrcSessionDg : IrcSession
-{
-    void delegate(string channel, IrcUser usr) OnJoin;
-    void delegate(string channel, IrcUser usr) OnPart;
-    
-    void delegate() OnConnectionLost;
-    void delegate(IrcMessage msg) OnMessageRecv;
-    void delegate(string msg) OnMessageSend;
-    
-    this(Uri uri)
-    {
-        super(uri);
-    }
-    
-    void onConnectionLost()
-    {
-        if ( OnConnectionLost !is null )
-            OnConnectionLost();
-    }
-    
-    void onJoin(string channel, IrcUser usr)
-    {
-        if ( OnJoin !is null )
-            OnJoin(channel, usr);
-    }
-    
-    void onPart(string channel, IrcUser usr)
-    {
-        if ( OnPart !is null )
-            OnPart(channel, usr);
-    }
-    
-    void onMessageRecv(IrcMessage msg)
-    {
-        if ( OnMessageRecv !is null )
-            OnMessageRecv(msg);
-    }
-    
-    void onMessageSend(string msg)
-    {
-        if ( OnMessageSend !is null )
-            OnMessageSend(msg);
-    }
-}
 
 debug(Irc)
 {
     void main()
     {
-        auto irc = new IrcSessionDg(new Uri("irc.freenode.net:6667"));
+        auto irc = new IrcSession(new Uri("irc.freenode.net:6667"));
         irc.connect();
         scope(exit) irc.close();
         
