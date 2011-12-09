@@ -2,26 +2,13 @@ module std.net.ftp;
 
 import std.net.uri;
 import std.socket, std.stream, std.conv;
+import std.traits;
 import std.typecons, std.array, std.string;
 import core.thread;
 
-import std.stdio : writeln, writef;
+import std.stdio : writeln, writef, readln, writefln;
+import std.datetime: Clock;
 
-
-enum FtpResponse : ushort
-{
-    Ok = 200,
-    NotLoggedIn = 530,
-    FileOk = 150,
-}
-
-enum FtpItemType 
-{
-    File,
-    Directory,
-    Link,
-    Unknown,
-}
 
 class FtpClient
 {
@@ -30,16 +17,34 @@ class FtpClient
     enum defaultPort = 21;
     enum bufferSize = 1024 * 4;
     
-    alias Tuple!(ushort, "code", string, "msg") Response;
-    alias Tuple!(string, "ip", ushort, "port") dataSocketInfo;
+    private 
+    {
+    	alias Tuple!(ushort, "code", string, "msg") Response;
+    	alias Tuple!(string, "ip", ushort, "port") dataSocketInfo;
+
+    	bool _connected = false;
+	    Uri _uri;
+	    TcpSocket _socket;
+	    FtpStream _stream;
+	    Format _format;
+	    Mode _mode;
+    }
     
-    bool _passive = true;
-    bool _connected = false;
+    enum Format
+    {
+    	Binary,
+    	Ascii,
+    }
     
-    Response response;
+    enum Mode
+    {
+    	Active,
+    	Passive,
+    }
     
-    Uri _uri;
-    Socket _socket;
+    
+    
+    void delegate(size_t current, size_t total) Progress;
     
     this(Uri uri)
     {
@@ -55,14 +60,17 @@ class FtpClient
         }
         
         _uri = uri;
+        this();
     }
     
-    this(string host, ushort port, string username = defaultUser, 
-         string password = "", string path = "/")
+    this()
     {
-        _uri = (new Uri(host, port)).user(username).password(password).path(path);
+   		 _socket = new TcpSocket();
+    	_stream = FtpStream(_socket, 30);
+    	_mode = Mode.Passive;
+    	_format = Format.Binary;
     }
-    
+   
     ~this()
     {
         //close();
@@ -70,135 +78,204 @@ class FtpClient
         // Async downloads to finish their work
     }
     
+    void auth(string username, string password)
+    {
+    	_uri.user     = username;
+    	_uri.password = password;
+    }
+    
     void open()
     {
         if ( _connected == true ) return;
         
-        _socket = new TcpSocket(new InternetAddress(_uri.host, _uri.port));
+        _socket.connect(new InternetAddress(_uri.host, _uri.port));
         
-        readResponse();
+        Response response = readResponse();
+        
         if ( response.code != 220 ) 
         {
-            throw new FtpException(this);
+            throw new FtpException(response);
         }
         
         if ( _uri.user != "" )
         {
-            exec("USER", _uri.user);
+            response = exec("USER", _uri.user);
             
             if ( response.code != 331 )
             {
-                throw new FtpException(this);
+                throw new FtpException(response);
             }
         }
         
         if ( _uri.password != "" && _uri.password !is null )
         {
-            exec("PASS", _uri.password);
+            response = exec("PASS", _uri.password);
             
             if ( response.code != 230 )
             {
-                throw new FtpException(this);
+                throw new FtpException(response);
             }
         }
         
         _connected = true;
+        
+        if (_format == Format.Binary)
+        {
+        	exec("TYPE I");
+        }
+        else
+        {
+        	exec("TYPE A");
+        }
     }
     
     void close(ulong line = __LINE__)
     {
-        writeln("Calling QUIT from line: ", line);
         if ( _connected == false ) return;
         
-        scope(exit) 
-        {
-            _socket.close();
-        }
-        
         exec("QUIT");
+        _socket.close();
         
         _connected = false;
     }
     
-    void list(string path = "/")
+    FtpFile[] list(string path = "/")
     {   
-        exec("TYPE I");
+        if (_format == Format.Binary)
+        {
+        	exec("TYPE I");
+        }
+        else
+        {
+        	exec("TYPE A");
+        }
+        
         auto info = requestDataSocket();
-        
-        exec("NLST", path);
-        
         auto sock = createDataSocket(info);
         
-        char[bufferSize] buffer;
-        ptrdiff_t len = sock.receive(buffer);
-        writeln(buffer[0..len]);
+        auto response = exec("LIST", path);
         
+        if (response.code == 550)
+        {
+        	throw new FtpException(response);
+        }
+        
+       	auto stream = FtpStream(sock, 30);
+       	char[10240] buffer;
+       	auto len = stream.read(buffer);
+       	
+       	sock.close();
+       	readResponse();
+       	
+       	auto data = buffer[0..len]; 
+       	FtpFile[] files;
+       	FtpFile file; 
+       	
+        foreach (line; data.splitLines())
+        {
+        	file = FtpFile(line);
+        	
+        	if (file.valid)
+        	{
+        		files ~= file;
+        	}
+        }
+        
+        return files;
     }
     
-    void kek()
+    @property Format format() const
     {
-        exec("FEAT");
-        writeln(response.msg);
+    	return _format;
     }
     
-    @property FtpClient passive(bool cond)
+    @property void format(Format format_)
     {
-        _passive = cond;
-        return this;
+    	_format = format_;
     }
     
+    @property Mode mode() const
+    {
+        return _mode;
+    }
+    	
+	void mode(Mode mode_)
+	{
+		_mode = mode_;
+	}
+ 
+ 
+ 	size_t size(string file)
+ 	{
+ 		if (_format == Format.Binary)
+ 		{
+ 			auto response = exec("SIZE", file);
+			if (response.code != 213)
+			{
+				throw new FtpException(response);
+			}
+			
+			return to!(size_t)(chomp(response.msg));
+		}
+		else
+		{
+			auto _files = list(file);
+			return _files[0].size;
+		}
+ 	}
+ 	
     void createDir(string name)
     {
-        exec("MKD", name);
+        auto response = exec("MKD", name);
         
         if ( response.code != 257 )
         {
-            throw new FtpException(this);
+            throw new FtpException(response);
         }
     }
     
     void deleteDir(string name)
     {
-        exec("RMD", name);
+        auto response = exec("RMD", name);
         
         if ( response.code != 250 )
         {
-            throw new FtpException(this);
+            throw new FtpException(response);
         }
     }
     
     void rename(string oldName, string newName)
     {
-        exec("RNFR", oldName);
+        auto response = exec("RNFR", oldName);
         if ( response.code != 350 )
         {
-            throw new FtpException(this);
+            throw new FtpException(response);
         }
         
-        exec("RNTO", newName);
+        response = exec("RNTO", newName);
         if ( response.code != 250 )
         {
-            throw new FtpException(this);
+            throw new FtpException(response);
         }
     }
     
     void deleteFile(string filename)
     {
-        exec("DELE", filename);
+        auto response = exec("DELE", filename);
         
         if ( response.code != 250 )
         {
-            throw new FtpException(this);
+            throw new FtpException(response);
         }
     }
     
     string currentDir()
     {
-        exec("PWD");
+        auto response = exec("PWD");
         
         if ( response.code != 257 )
         {
-            throw new FtpException(this);
+            throw new FtpException(response);
         }
         
         string resp = response.msg.idup;
@@ -215,58 +292,39 @@ class FtpClient
     
     void changeWorkingDir(string path)
     {
-        exec("CWD", path);
+        auto response = exec("CWD", path);
         if ( response.code != 550 )
         {
-            throw new FtpException(this);
+            throw new FtpException(response);
         } 
     }
     
-    void stat(string name)
+    void download()(string remoteFile, string localFile, bool resume = true)
     {
-        exec("TYPE I");
-        exec("STAT", name);
-        writeln(response.code, " : ", response.msg);
-    }
-/**
-string s = download(string "fileOnFtp.zip");
-ubyte[] s = download!(ubyte)("fileOnFtp.zip");
-void download(string "fileOnFtp.zip", string "localFile.zip");
-void download("fileOnFtp.zip", Stream new File("localFile.zip"));
-void download("fileOnFtp.zip", ubyte[] buffer);
-
-string s = downloadAsync(string "fileOnFtp.zip");
-void downloadAsync(string "fileOnFtp.zip", string "localFile.zip");
-void downloadAsync("fileOnFtp.zip", Stream new File("localFile.zip"));
-void downloadAsync("fileOnFtp.zip", ubyte[] buffer);
-
-foreach ( chunk; struct FtpChunk downloadByChunk(4096)(string "fileOnFtp") )
-{
-}
-
-upload(string sourceFile, string destFile);
-upload(Stream sourceFile, string destFile);
-upload(T[]  sourceBuffer, string destFile);
-    
-uploadAsync(string sourceFile, string destFile);
-uploadAsync(Stream sourceFile, string destFile);
-uploadAsync(T[]  sourceBuffer, string destFile);
-    
-uploadByChunk(string sourceFile, string destFile); // ? not sure about it
-uploadByChunk(Stream sourceFile, string destFile); // ? not sure about it
-uploadByChunk(T[]  sourceBuffer, string destFile); // ? not sure about it
- */   
-    void download()(string remoteFile, string localFile)
-    {
-        download(remoteFile, new BufferedFile(localFile, FileMode.Out, bufferSize));
+        download(remoteFile, new BufferedFile(localFile, FileMode.Out, bufferSize), resume);
     }
     
-    void download()(string remoteFile, Stream localFile)
+    void download()(string remoteFile, Stream localFile, bool resume = true)
     {
-        exec("TYPE I");
-        auto info = requestDataSocket();
+        if (_format == Format.Binary)
+        {
+        	exec("TYPE I");
+        }
+        else
+        {
+        	exec("TYPE A");
+        }
+      	
+      	size_t totalSize;
+        if (Progress !is null)
+        {
+        	totalSize = size(remoteFile);
+        }
         
-        if ( _resume == true )
+        auto info = requestDataSocket();
+        auto sock = createDataSocket(info);
+        
+        if ( resume == true )
         {
             ulong size = localFile.size();
             localFile.position(size);
@@ -274,226 +332,151 @@ uploadByChunk(T[]  sourceBuffer, string destFile); // ? not sure about it
         }
         exec("RETR", remoteFile);
         
-        auto sock = createDataSocket(info);
         
         ubyte[bufferSize] buffer;
         ptrdiff_t len = 0;
+        size_t totalLen;
         
-        while (true)
+        enum convtime = convert!("seconds", "hnsecs")(60);
+    	ulong timeOut = Clock.currStdTime() + convtime;
+    	
+      	while (Clock.currStdTime() < timeOut)
         {
              len = sock.receive(buffer);
+             if (len < 1) break;
              
-             if ( len < 1 )
-             {
-                break;
-             }
-               
              localFile.write(buffer[0..len]);
+             totalLen += len;
+             
+             if (Progress !is null)
+             {
+             	Progress(totalLen, totalSize);
+             }
+             
+             timeOut = Clock.currStdTime() + convtime;
+        }
+        writeln("out of loop :(");
+        sock.close();
+        localFile.close();
+        
+        readResponse();
+    }
+    
+    T[] get(T = immutable(char))(string filename, int offset = -1)
+    {
+    	T[] buff;
+    	get(filename, buff, offset);
+    	return buff;
+    }
+    
+    size_t get(T = ubyte)(string remoteFile, ref T[] buffer, int offset = -1)
+    if (!isStaticArray!(T[])) // append
+    {
+    	size_t totalSize;
+    	if (Progress !is null)
+    	{
+    		totalSize = size(remoteFile);
+    	}
+    	
+        if (_format == Format.Binary)
+        {
+        	exec("TYPE I");
+        }
+        else
+        {
+        	exec("TYPE A");
         }
         
-        localFile.close();
-    }
-    
-    T[] download(T = immutable(char))(string remoteFile)
-    {
-        T[] buffer;
-        
-        download!(T)(remoteFile, buffer);
-        
-        return buffer;
-    }
-    
-    void download(T = ubyte)(string remoteFile, ref T[] buffer)
-    {
-        exec("TYPE I");
         auto info = requestDataSocket();
+        auto sock = createDataSocket(info);
         
-        if ( _resume == true )
+        if ( offset > 0 )
         {
-            /*ulong size = localFile.size();
-            localFile.position(size);
-            exec("REST", size);*/
+            exec("REST", offset);
+        }
+        exec("RETR", remoteFile);
+       	
+       	void[bufferSize] buff = void;
+       	size_t totalLen;
+       	
+       	enum convtime = convert!("seconds", "hnsecs")(60);
+    	ulong timeOut = Clock.currStdTime() + convtime;
+    	
+      	while (Clock.currStdTime() < timeOut)
+        {
+        	auto len = sock.receive(buff);
+        	
+        	if (len < 1) 
+        	{
+        		break;
+        	}	
+        	
+       		buffer ~= cast(typeof(buffer[0])[])buff[0..len];
+       		totalLen += len;
+       		
+       		if (Progress !is null)
+       		{
+       			Progress(totalLen, totalSize);
+       		}
+       		
+       		if (len < bufferSize)
+       		{
+       			//break;
+       		}
+       		timeOut = Clock.currStdTime() + convtime;
+        }
+        
+        sock.close();
+        readResponse();
+        
+       	return totalLen;
+    }
+   
+    size_t get(T)(string remoteFile, ref T buffer, int offset = -1)
+    if (isStaticArray!(T) && isMutable!(T))
+    {
+ 		size_t totalSize;
+ 		   
+    	if (Progress !is null)
+    	{
+    		totalSize = size(remoteFile);
+    	}
+    	
+  		if (_format == Format.Binary)
+        {
+        	exec("TYPE I");
+        }
+        else
+        {
+        	exec("TYPE A");
+        }
+        auto info = requestDataSocket();
+        auto sock = createDataSocket(info);
+        
+        if ( offset > 0 )
+        {
+            exec("REST", offset);
         }
         exec("RETR", remoteFile);
         
-        auto sock = createDataSocket(info);
-        
-        ubyte[bufferSize] tmpBuffer;
-        ptrdiff_t len = 0;
-        ptrdiff_t totalLen = 0;
-        
-        while (true)
-        {
-             len = sock.receive(tmpBuffer);
-             totalLen += len;
-             
-             if ( len < 1 )
-             {
-                break;
-             }
-               
-             buffer ~= cast(T[]) tmpBuffer[0..len];
-             
-        }
-        
-        buffer = buffer[0..totalLen];
+       	auto stream = FtpStream(sock, 60); 
+       	if (Progress !is null)
+       	{
+       		//stream.Progress = (size_t current) { Progress(current, totalSize); };
+   		}
+   		
+       	auto len = stream.read(buffer);
+       	sock.close();
+       	readResponse();
+       	
+       	return len;
     }
     
-    void downloadAsync(string remoteFile, string localFile)
-    {
-        downloadAsync(remoteFile, new BufferedFile(localFile, FileMode.Out, bufferSize));
-    }
-    
-    void downloadAsync(string remoteFile, Stream localFile)
-    {
-        if ( _asyncDownloadInProgress == true )
-        {
-            //throw new Exception("Already blabla");
-            //maybe spawn new class?
-            _uri.path = currentDir();
-            auto newTmp = new FtpClient(_uri);
-            newTmp.open();
-            newTmp.downloadAsync(remoteFile, localFile);
-            
-            return;
-        }
-        
-        DownloadAsyncImpl impl = new DownloadAsyncImpl(this, remoteFile, localFile);
-        impl.start();
-        _asyncDownloadInProgress = true;
-    }
-    
-    FtpChunk downloadByChunk(size_t chunkSize)(string remoteFile)
-    {
-        return FtpChunk(this, chunkSize, remoteFile);
-    }
-    
-    struct FtpChunk
-    {
-        size_t chunkSize;
-        string remoteFile;
-        Socket sock;
-        FtpClient client;
-        
-        this(FtpClient client, size_t chunkSize, string remoteFile)
-        {
-            this.client = client;
-            this.chunkSize = chunkSize;
-            this.remoteFile = remoteFile;
-            
-            client.exec("TYPE I");
-            auto info = client.requestDataSocket();
-            client.exec("RETR", remoteFile);
-            
-            sock = client.createDataSocket(info);
-        }
-        
-        int opApply (int delegate(ref ubyte[]) dg)
-        {
-            ubyte[]   buffer = new ubyte[chunkSize];
-            int         result = 0;
-    
-            sock.receive(buffer);
-            
-            result = dg(buffer);
-                
-            return result;
-        }
-    }
-    
-    private class DownloadAsyncImpl : Thread
-    {
-        FtpClient parent;
-        Stream localFile;
-        string remoteFile;
-        
-        this (FtpClient parent, string remoteFile, Stream localFile)
-        {
-            this.parent = parent;
-            this.remoteFile = remoteFile;
-            this.localFile = localFile;
-            
-            super(&run);
-        }
-        
-        void run()
-        {
-            scope(exit)
-            {
-                parent._asyncDownloadInProgress = false;
-            }
-            
-            parent.download(remoteFile, localFile);
-        }
-    }
-    
-    bool _resume;
-    bool _append;
 private:
 
-    /*
-    * Meh, I really need to start work on it...
-    * list() and info() requires this method
-    *
-    void parser(char[] stream)
+    void writeRequest(T...)(string cmd, T args)
     {
-        FtpFile[] ftpFiles;
-        FtpFile curFile;
-        
-        char[] parse_word(char[] line) 
-        {
-            size_t start = 0, end = 0, pos = 0;
-
-            // Skip whitespace before.
-            while(pos < line.length && line[pos] == ' ')
-                pos++;
-
-            start = pos;
-            while(pos < line.length && line[pos] != ' ')
-                pos++;
-            end = pos;
-
-            // Skip whitespace after.
-            while(pos < line.length && line[pos] == ' ')
-                pos++;
-
-            return line[start .. end];
-        }
-        
-        char[][] files = stream.split("\n");
-        
-        foreach (file; files)
-        {
-            if (file.length == 0) continue;
-            curFile = new FtpFile("lol", this);
-            
-            if ( file[0] == 'd' )
-            {
-                curFile.itemType = FtpItemType.Directory;
-            }
-            else if ( file[0] == '-' )
-            {
-                curFile.itemType = FtpItemType.File;
-            }
-            else if ( file[0] == 'l' )
-            {
-                curFile.itemType = FtpItemType.Link;
-            }
-            else
-            {
-                curFile.itemType = FtpItemType.Unknown;
-            }
-            
-            ftpFiles ~= curFile;
-        }
-        
-        writeln(curFile.itemType);
-        //writeln(split);
-    }
-    */
-    void exec(T...)(string cmd, T args)
-    {
-        foreach ( arg; args )
+   		foreach ( arg; args )
         {
             cmd ~= " " ~ to!(string)(arg);
         }
@@ -503,21 +486,24 @@ private:
         _socket.send(cmd);
         
         debug(Ftp)
-            writeln("Request: ", cmd);
-        
-        readResponse();
-        
-        debug(Ftp)
-            writeln("Reponse: ", response.msg);
+            writeln("<", cmd);
     }
     
-    void readResponse()
+    Response exec(T...)(string cmd, T args)
     {
-        char[bufferSize] resp;
-        ptrdiff_t len = _socket.receive(resp);
+        writeRequest(cmd, args);
         
-        if ( len < 5 )
-        {
+        return readResponse();
+    }
+    
+    Response readResponse()
+    {
+    	char[4096] resp;
+        size_t len = _stream.readResponse(resp);
+        
+      	Response response;
+      	
+        if ( len < 5 ) {
             response.code = 500;
             response.msg = "Syntax error, command unrecognized. "
                            "This may include errors such as command line too long";
@@ -532,20 +518,25 @@ private:
             {
                 response.code = 500;
             }
+            
             response.msg = resp[4..len].idup;
         }
+        
+        writeln(">", response.msg);
+        
+        return response;
     }
     
     dataSocketInfo requestDataSocket()
     {
         dataSocketInfo tuple;
        
-        if ( _passive == true )
+        if ( _mode == Mode.Passive )
         {
-            exec("PASV");
+            auto response = exec("PASV");
             if ( response.code != 227 )
             {
-                throw new FtpException(this);
+                throw new FtpException(response);
             }
     
             sizediff_t begin = response.msg.indexOf("(");
@@ -580,12 +571,396 @@ private:
     
     Socket createDataSocket(dataSocketInfo info)
     {
-        Socket dataSock = new TcpSocket( new InternetAddress(info.ip, info.port) );
+        Socket dataSock = new TcpSocket();
+        dataSock.connect(new InternetAddress(info.ip, info.port));
+        //dataSock.blocking(false);
         
         return dataSock;
     }
     
-    private shared(bool) _asyncDownloadInProgress = false;
+}
+
+struct FtpFile
+{
+	enum Type
+	{
+		File,
+		Directory,
+		Link,
+	}
+	
+	struct Time
+	{
+		ushort day;
+		ushort month;
+		string monthString;
+		uint year;
+		ushort hour;
+		ushort min;
+	}
+	
+	private 
+	{
+		char[] 		_stream;
+		bool   		_valid = false;
+		
+		Type  	 	_type;
+		string 		_chmodString;
+		ushort		_chmod;
+		uint		_childs;
+		string		_user;
+		string 		_group;
+		Time		_date;
+		ulong		_size;
+		string 		_filename;
+	}
+	
+	this(char[] stream)
+	{
+		_stream = stream;
+		parse();
+	}
+	
+	@property Type type() const
+	{
+		return _type;
+	}
+	
+	@property string chmodString()
+	{
+		return _chmodString;
+	}
+	
+	@property ushort chmod() const
+	{
+		return _chmod;
+	}
+	
+	@property uint child() const 
+	{
+		return _childs;
+	}
+	
+	@property string user()
+	{
+		return _user;
+	}
+	
+	@property string group()
+	{
+		return _group;
+	}
+	
+	@property Time time() const
+	{
+		return _date;
+	}
+	
+	@property ulong size() const
+	{
+		return _size;
+	}
+	
+	@property string name()
+	{
+		return _filename;
+	}
+	
+	@property bool valid() const
+	{
+		return _valid;
+	}
+	
+	void parse()
+	{
+		switch (_stream[0])
+		{
+		   	case 'b':
+			case 'c':
+			case 'd':
+			case 'l':
+			case 'p':
+			case 's':
+			case '-':
+					parseDefault();
+					return;
+				break;
+			case '+':
+					parseEplf();
+					return;
+				break;
+			default:
+					parseDos();
+				break;
+		}
+	}
+	
+	void parseDefault()
+	{
+		if (_stream.length < 3) return;
+		
+		switch (_stream[0])
+		{
+			case 'd':
+					_type = Type.Directory;
+				break;
+			case '-':
+					_type = Type.File;
+				break;
+			case 'l':
+					_type = Type.Link;
+				break;
+			default:
+					_type = Type.Directory;
+				break;
+		}
+		
+		char[][] split = _stream[1..$].split(" ");
+		char[][] truncate = new char[][split.length];
+			
+		size_t iter;
+		foreach (elem; split)
+		{
+			if (elem != "")
+			{
+				truncate[iter++] = elem;
+			}
+		}
+		truncate = truncate[0..iter];
+		
+		if (truncate.length < 4)
+		{
+			_valid = false;
+			return;
+		}
+		_chmodString = to!(string)(truncate[0]);
+		_chmod = parseChmod(truncate[0]);
+		_childs = to!(uint)(truncate[1]);
+		_user = to!(string)(truncate[2]);
+		_group = to!(string)(truncate[3]);
+		_size = to!(ulong)(truncate[4]);
+		_date = parseDate(truncate);
+		_filename = parseFilename(truncate);
+		
+		if (_filename != "")
+			_valid = true;
+	}
+	
+	Time parseDate(const(char)[][] input)
+	{
+		Time time;
+		
+		if (_type == Type.Link)
+		{
+			input = input[5..$-3];
+		}
+		else
+		{
+			input = input[5..$-1];
+		}
+		
+		foreach (elem; input)
+		{
+			if (!std.string.isNumeric(elem)) // either month or hour
+			{
+				if (elem[0] > '9') // month
+				{
+					time.monthString = to!(string)(elem);
+					
+					final switch(toLower(elem))
+					{
+						case "jan":
+								time.month = 1;
+							break;
+						case "feb":
+								time.month = 2;
+							break;
+						case "mar":
+								time.month = 3;
+							break;
+						case "apr":
+								time.month = 4;
+							break;
+						case "may":
+								time.month = 5;
+							break;
+						case "jun":
+								time.month = 6;
+							break;
+						case "jul":
+								time.month = 7;
+							break;
+						case "aug":
+								time.month = 8;
+							break;
+						case "sep":
+								time.month = 9;
+							break;
+						case "oct":
+								time.month = 10;
+							break;
+						case "nov":
+								time.month = 11;
+							break;
+						case "dec":
+								time.month = 12;
+							break;
+							
+					}
+				}
+				else // hour:minute
+				{
+					if (elem[2] == ':')
+					{
+						time.hour = to!(ushort)(elem[0..1]);
+						time.min  = to!(ushort)(elem[3..4]);
+					}
+				}
+			}
+			else
+			{
+				if (elem.length == 4) // year
+				{
+					time.year = to!(uint)(elem);
+				}
+				else if (elem.length == 2) // day
+				{
+					time.day = to!(ushort)(elem);
+				}
+			}
+		}
+		
+		if (time.year == 0)
+		{
+			time.year = Clock.currTime().year();
+		}
+		
+		return time;
+	}
+	
+	string parseFilename(const(char)[][] input)
+	{
+		if (_type == Type.Link)
+		{
+			// check last 3 entries
+			if (input[$-2] == "->")
+			{
+				return to!(string)(input[$-3]);
+			}
+		}
+		
+		return to!(string)(input[$-1]);
+	}
+	
+	void parseEplf(){}
+	void parseDos(){}
+	
+	ushort parseChmod(const(char)[] chmod)
+	{
+		enforce(chmod.length == 9);
+		ushort octalChmod = octal!(000);
+		
+		auto owner = chmod[0..3];
+		if (owner[0] == 'r') {
+			octalChmod = octalChmod & 100;
+		}
+		writeln(octalChmod);
+		auto group = chmod[3..6];
+		auto other = chmod[6..9];
+		
+		writeln("owner: ", owner, "group: ", group, "other: ", other);
+		
+		return octal!(000);
+	}
+}
+
+struct FtpStream
+{
+	Socket _socket;
+	const ulong _timeOut;
+	void delegate(size_t current) Progress;
+	
+	this (Socket socket, int timeOut)
+	{
+		_socket = socket;
+		_timeOut = convert!("seconds", "hnsecs")(timeOut);
+	}
+	
+	size_t readResponse(T)(ref T resp)
+	if ( isMutable!(T) &&
+		 (is(Unqual!(typeof(T[0])) : char) ||
+		  is(Unqual!(typeof(T[0])) : ubyte)) )
+	{
+        typeof(T[0])[4096] buff;
+        size_t totalLen;
+        ulong timeOut = Clock.currStdTime() + _timeOut;
+        
+        ptrdiff_t len;
+         
+        if (buff.length > resp.length && resp.length > 0)
+        	buff = buff[0..resp.length];
+      	
+      	while (Clock.currStdTime() < timeOut && totalLen < resp.length)
+        {
+        	len = _socket.receive(buff);
+        		
+        	resp[totalLen..totalLen+len] = buff[0..len];
+        	totalLen += len;
+	      
+	       	if (Progress !is null)
+	       	{
+	       		Progress(totalLen);
+	       	}
+	       	
+	       	if (len < buff.length)
+	       	{
+	       		break;
+	       	}
+	        	
+	        timeOut = Clock.currStdTime() + _timeOut;
+        }
+		
+		return totalLen;
+	}
+	
+	size_t read(T)(ref T resp)
+	if ( isMutable!(T) &&
+		 (is(Unqual!(typeof(T[0])) : char) ||
+		  is(Unqual!(typeof(T[0])) : ubyte)) )
+	{
+        typeof(T[0])[4096] buff;
+        size_t totalLen;
+        ulong timeOut = Clock.currStdTime() + _timeOut;
+        
+        ptrdiff_t len;
+      	
+      	while (Clock.currStdTime() < timeOut && totalLen < resp.length)
+        {
+        	len = _socket.receive(buff);
+        	
+        	if (len < 1)
+        		break;
+        		
+        	if (totalLen + len > resp.length)
+        	{
+        		auto fill = resp.length - totalLen;
+        		resp[totalLen..totalLen+fill] = buff[0..fill];
+        		return resp.length;
+        	}
+        		
+        	resp[totalLen..totalLen+len] = buff[0..len];
+        	totalLen += len;
+	      
+	       	if (Progress !is null)
+	       	{
+	       		Progress(totalLen);
+	       	}
+	        	
+	        timeOut = Clock.currStdTime() + _timeOut;
+        }
+		
+		return totalLen;
+	}
 }
 
 class FtpException : Exception
@@ -593,34 +968,70 @@ class FtpException : Exception
     ushort code;
     string msg;
     
-    this(FtpClient client, string file = __FILE__, size_t line = __LINE__)
+    this(Tuple!(ushort, "code", string, "msg") response, 
+    	 string file = __FILE__, size_t line = __LINE__)
     {
-        code = client.response.code;
-        msg = client.response.msg;
+        code = response.code;
+        msg = response.msg;
         
-        //client.close();
         super("\n" ~ file ~ "(" ~ to!(string)(line) ~ ")\t" ~ "\t" ~ 
-                        to!(string)(client.response.code) ~ ": " ~ client.response.msg);
+                to!(string)(response.code) ~ ": " ~ response.msg);
     }
 }
 
 debug(Ftp)
 {
-    import std.string: chomp;
+    import std.string, std.datetime;
+    
     void main()
     {
-        auto ftp = new FtpClient("***", 21, "***", "***");
+    	
+        auto ftp = new FtpClient(new Uri("ftp://ftp.mydevil.net", 21));
+        ftp.auth("f11127_naz", "naz");
+        //auto ftp = new FtpClient(new Uri("ftp://ftp.digitalmars.com"));
+       // auto ftp = new FtpClient(new Uri("ftp://driv.pl", 5999));
+        //ftp.auth("naz", "naz");
+        
         ftp.open();
-        ftp.createDir("filmy");
-        ftp.rename("filmy", "dupeczki");
+        auto files = ftp.list();
         
-        ftp.downloadAsync("benjamin.mp3", "benjamin.mp3");
-        ftp.downloadAsync("benjamin.mp3", "benjamin_copy.mp3");
-        ftp.downloadAsync("benjamin.mp3", "benjamin_copy2.mp3");
+        foreach(file; files)
+        writeln(file.chmod);
+//        size_t filesize;
+//        auto start = Clock.currStdTime();
+//        ftp.Progress = (size_t current, size_t total) 
+//        { 
+//        	filesize = total;
+//    	};
+//    	auto end = Clock.currStdTime();
+//    	
+//        ftp.download("benjamin.mp3", "dmc.mp3", false);
         
-        writeln("Downloads above doesn't block main thread so I can display this"
-                "message *Grins*");
+        //writeln(z);
+		//writeln(buff[0..z]);
+        //string c = ftp.get("index.php");
+        //ftp.createDir("chujmuje");
         
+        
+        
+        /*char[10000] buffer;
+		auto bytes = ftp.get("index.php", buffer);
+		writeln(buffer[0..bytes]);
+		
+		string index_php = ftp.get("index.php");
+		writeln(index_php);
+		
+		ftp.download("index.php", "local1.php");
+		ftp.download("index.php", "local2.php");
+		ftp.download("index.php", "local3.php");
+		ftp.download("index.php", "local4.php");
+		ftp.download("index.php", "local5.php");
+		
+		ftp.list();
+		ftp.list();*/
+ 		ftp.close();
+ 		auto s = readln();
+        /+ 
         auto ftp2 = new FtpClient("***", 21, "***", "***");
         ftp2.open();
         
@@ -657,6 +1068,6 @@ debug(Ftp)
         foreach (ubyte[] cur; ftp2.downloadByChunk!(3)("index.php") )
         {
             writeln( cast(string) cur);
-        }
+        }+/
     }
 }
