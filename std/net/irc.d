@@ -186,6 +186,14 @@ struct IrcMessage
     {
         return _author;
     }
+    
+    /**
+     * Returns message as string
+     */
+    public string toString()
+    {
+        return message;
+    }
 }
 
 /**
@@ -207,6 +215,11 @@ struct IrcResponse
      * Command params, 1st is (not sure if always) channel
      */
     string[] params;
+    
+    /**
+     * Raw response
+     */
+    string raw;
         
     
     /**
@@ -216,12 +229,22 @@ struct IrcResponse
      *  _command    =  Response command
      *  _params =   Command params
      *  _target = Event source
+     *  _raw    = Raw response
      */
-    public this(string _command, string[] _params, IrcUser _target)
+    public this(string _command, string[] _params, IrcUser _target, string _raw = "" )
     {
         command = _command;
         params  = _params;
         target = _target;
+        raw = _raw;
+    }
+    
+    /**
+     * Returns raw response as string
+     */
+    public string toString()
+    {
+        return raw;
     }
 }
 
@@ -271,6 +294,12 @@ class IrcSession
     protected this()
     {
         _sock = new TcpSocket();
+    }
+    
+    public ~this()
+    {
+        if(_alive)
+            quit();
     }
 
     /**
@@ -461,9 +490,9 @@ class IrcSession
     /**
      * Request server to send Message Of the Day
      */
-    public void msod()
+    public void motd()
     {
-        send("MOTD " ~ _uri.host);
+        send("MOTD");
     }
     
     /**
@@ -521,6 +550,9 @@ class IrcSession
     
     /**
      * Reads data from Irc
+     * 
+     * Returns:
+     *  IRC response line
      */
     public string rawRead()
     {
@@ -625,7 +657,7 @@ class IrcSession
         command = toUpper(params[0]);
         params = params[1..$];    
             
-        return IrcResponse(command, params, parseTarget(target));
+        return IrcResponse(command, params, parseTarget(target), line);
     }
     
     /**
@@ -713,6 +745,12 @@ class IrcSession
     
     /**
      * Returns list of users on the channel
+     * 
+     * Params:
+     *  channel =   Channel to list users from
+     * 
+     * Returns:
+     *  Users
      */
     public string[] getUsers(string channel)
     {
@@ -743,6 +781,44 @@ class IrcSession
         }
         
         return users;
+    }
+    
+    /**
+     * Calls dg on each user listed by the server
+     * 
+     * Params:
+     *  channel =   Channel to look for users
+     *  dg  =   Callback to call on each user
+     */
+    public void getUsers(string channel, void delegate(string usr) dg)
+    {
+        listUsers(channel);
+        
+        while(alive)
+        {
+            auto line = rawRead();
+            auto res = parseLine(line);
+            
+            if(res.command == "366")
+                break;
+            else if(res.command == "353")
+            {
+                auto pos = line[1..$].indexOf(':');
+                if(pos == -1)
+                    continue;
+                else
+                {
+                    auto usrs = line[pos+2 .. $].split(" ");
+                    
+                    foreach(u; usrs)
+                        dg(u);
+                }
+            }
+            else if(res.command == "332")
+                continue;
+            else
+                break;
+        }
     }
     
     /**
@@ -819,6 +895,106 @@ class IrcSession
         return channels;
     }
     
+    /**
+     * Calls dg on each channel returned by server
+     * 
+     * Params:
+     *  dg  =   Callback
+     *  _channels   =   Channels to get description
+     */
+    public void getChannels(void delegate(IrcChannel) dg, string[] _channels...)
+    {
+        listChannels(_channels);
+        
+        while(alive)
+        {
+            auto line = rawRead();
+            auto res = parseLine(line);
+            
+            if(res.command == "322")
+            {
+                if(res.params.length > 3)
+                    dg(IrcChannel(res.params[1], res.params[2], res.params[3]));
+                else
+                    dg(IrcChannel(res.params[1], res.params[2], ""));
+            }
+            else if( res.command == "323" )
+                break;
+        }
+    }
+    
+    /**
+     * Reads Message of the day from server and returns it
+     * 
+     * Returns:
+     *  Message of the day
+     */
+    public string getMotd()
+    {
+        motd();
+        bool started;
+        string motd;
+        
+        while(alive)
+        {
+            auto line = rawRead();
+            auto res = parseLine(line);
+            
+            if(res.command == "375")
+                started = true;
+            
+            else if(res.command == "376")
+                break;
+                
+            else if(res.command == "372")
+                motd ~= res.params[1] ~ '\n';
+        }
+        
+        return motd;
+    }
+    
+    /**
+     * Calls callback on each message of the day line
+     * 
+     * Params:
+     *  dg  =   Delegate to call on each MOTD line
+     */
+    public void getMotd(void delegate(IrcResponse res) dg)
+    {
+        motd();
+        bool started;
+        
+        while(alive)
+        {
+            auto line = rawRead();
+            auto res = parseLine(line);
+            
+            if(res.command == "375")
+                started = true;
+            
+            else if(res.command == "376")
+                break;
+                
+            else if(res.command == "372")
+                dg(res);
+        }
+    }
+    
+    /**
+     * Gets server time
+     * 
+     * Returns:
+     *  Server time
+     */
+    public string getServerTime()
+    {
+        send("TIME");
+        
+        auto line = rawRead();
+        auto res = parseLine(line);
+        
+        return res.params[2];
+    }
     
     /**
      * Called when someone joins the channel, including you
@@ -882,6 +1058,8 @@ debug(Irc)
         irc.connect();
         scope(exit) irc.close();
         
+        irc.OnNickNameInUse = () { irc.auth(IrcUser("nabot_", "nabot_"), "Real name"); irc.join("#dragonov"); };
+        
         irc.auth(IrcUser("nabot", "nabot"), "real name");
         irc.join("#dragonov");
         
@@ -897,12 +1075,28 @@ debug(Irc)
             if(msg.message == "!testWhois")
                 irc.getUserData("Robik");
             
+            if(msg.message == "!testMotd")
+                writeln(irc.getMotd());
+            
+            if(msg.message == "!testMotdg")
+                irc.getMotd((IrcResponse res) {writeln(res.params[1]);});
+            
             if(msg.message == "!testList")
             {
                 auto c = irc.getChannels();
                 
                 foreach(ch; c)
                     writeln(ch);
+            }
+            
+            if(msg.message == "!repeat")
+            {
+                irc.sendMessage(msg);
+            }
+            
+            if(msg.message == "!testTime")
+            {
+                irc.getServerTime();
             }
             
             if(msg.message == "!testChannel")
@@ -915,6 +1109,9 @@ debug(Irc)
                 
             writefln("[%s]<%s> %s", msg.channel, msg.author.nick, msg.message);
         };
+        
+        //irc.OnRawRead = (string msg) { writeln("> ", msg); };
+        
         irc.OnConnectionLost = (){ writeln("Connection lost :<"); };
         irc.OnJoin = (string channel, IrcUser usr)
             { writefln("[%s] joined the %s", usr.nick, channel);; };
