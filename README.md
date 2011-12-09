@@ -19,29 +19,29 @@ __std.net__ is a library made for simple usage of common network protocols in D 
 
 ### Links
 
- - [Sources](std/net/)
- - [DDOC docs](doc/)
+ - [Sources](https://github.com/nazriel/std.net/tree/master/std/net/)
+ - [DDOC docs](https://github.com/nazriel/std.net/tree/master/doc/)
 
 ### Protocols
 
 Here's list of protocols that are being implemented:
 
- - ![In dev](http://img248.imageshack.us/img248/9397/bdev.png "In development") __[Http](./docs/Http.md)__
+ - ![In dev](http://img248.imageshack.us/img248/9397/bdev.png "In development") __[Http](https://github.com/nazriel/std.net/tree/master/docs/Http.md)__
  
     HTTP is used to recieve web pages and files on the internet. It's Server-Client based.
  
- - ![In dev](http://img248.imageshack.us/img248/9397/bdev.png "In development") __[Ftp](./docs/Ftp.md)__
+ - ![In dev](http://img248.imageshack.us/img248/9397/bdev.png "In development") __[Ftp](https://github.com/nazriel/std.net/tree/master/docs/Ftp.md)__
  
     FTP is used to send and recieve files over internet. It's Server-Client based.
  
- - ![In dev](http://img248.imageshack.us/img248/9397/bdev.png "In development") __[Irc](./docs/Irc.md)__
+ - ![In dev](http://img248.imageshack.us/img248/9397/bdev.png "In development") __[Irc](https://github.com/nazriel/std.net/tree/master/docs/Irc.md)__
  
     IRC is used to communicate though internet. It's Server-Client based.
    
 
 ### Helper classes
 
- - ![Unstable/Beta](http://img190.imageshack.us/img190/1751/bunstable.png "Unstable/Beta") __[Uri](./docs/Uri.md)__
+ - ![Unstable/Beta](http://img190.imageshack.us/img190/1751/bunstable.png "Unstable/Beta") __[Uri](https://github.com/nazriel/std.net/tree/master/docs/Uri.md)__
  
    Uri is used to define host, port and other connection details
 
