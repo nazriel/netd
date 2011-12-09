@@ -238,6 +238,14 @@ struct IrcResponse
         target = _target;
         raw = _raw;
     }
+    
+    /**
+     * Returns raw response as string
+     */
+    public string toString()
+    {
+        return raw;
+    }
 }
 
 
