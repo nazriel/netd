@@ -17,8 +17,7 @@ debug(Http)
 {
     import std.stdio;
 }
-
-
+   
 /**
  * HTTP request method
  */
@@ -269,7 +268,7 @@ class HttpClient
      * 
      * 
      */
-    this(Uri uri, RequestMethod method = RequestMethod.Get)
+    this(ref Uri uri, RequestMethod method = RequestMethod.Get)
     {
         _uri = uri;
         _method = method;
@@ -292,7 +291,7 @@ class HttpClient
      */
     this(string uri, RequestMethod method = RequestMethod.Get)
     {
-		this(new Uri(uri), method);
+		this(Uri(uri), method);
 	}
     
     /**

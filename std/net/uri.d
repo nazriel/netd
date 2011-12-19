@@ -122,7 +122,7 @@ struct UriQuery
  * assert(uri.path == "/path");
  * ---------
  */
-class Uri
+struct Uri
 {
     /**
      * URI schemes
@@ -565,9 +565,9 @@ class Uri
      * auto uri = Uri.parseUri("http://domain.com", 80);
      * --------
      */
-    static Uri parseUri(string uri, ushort port)
+    static ref Uri parseUri(string uri, ushort port)
     {
-        return new Uri(uri, port);
+        return Uri(uri, port);
     }
     
     /**
@@ -584,9 +584,9 @@ class Uri
      * auto uri = Uri.parseUri("http://domain.com");
      * --------
      */
-    static Uri parseUri(string uri)
+    static ref Uri parseUri(string uri)
     {
-        return new Uri(uri);
+        return Uri(uri);
     }
 }
 

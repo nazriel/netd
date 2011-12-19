@@ -9,7 +9,23 @@ import core.thread;
 import std.stdio : writeln, writef, readln, writefln;
 import std.datetime: Clock;
 
+import std.c.stdio;
 
+/*
+* TODO: Secure FTP
+*/
+
+/**
+* Ftp client class
+*
+* Example:
+* ---------
+* auto ftp = new Ftp("ftp.digitalmars.com", 21);
+* ftp.open();
+* ftp.download("dmd-2.056.zip", "localfile.zip");
+* ftp.close();
+* ---------
+*/
 class FtpClient
 {
     enum defaultUser = "anonymous";
@@ -30,39 +46,56 @@ class FtpClient
         Mode _mode;
     }
     
+    protected
+    {
+        bool _stopDownload = false;
+    }
+    
+    /**
+    * FTP transfer format
+    */
     enum Format
     {
         Binary,
         Ascii,
     }
     
+    /**
+    * FTP transfer mode
+    */
     enum Mode
     {
         Active,
         Passive,
     }
     
-    
-    
+    /**
+    * Delegate for reporting progress in downloading/uploading
+    */
     void delegate(size_t current, size_t total) Progress;
     
-    this(Uri uri)
+    /**
+    * Creates new FtpClient object
+    *
+    * Params:
+    * host = Ftp server's host
+    * port = Ftp server's port
+    *
+    */
+    this(string host, ushort port = 21)
     {
-        if ( uri.user is null )
-        {
-            uri.user = defaultUser;
-            uri.password = defaultPass;
-        }
-        
-        if ( uri.port == 0 )
-        {
-            uri.port = defaultPort;
-        }
-        
-        _uri = uri;
         this();
+        _uri.parse(host, port); 
     }
     
+    /**
+    * Creates new FtpClient
+    *
+    * Creates object without any host or port 
+    * secified. You need to set host and port
+    * manually, by using Ftp.host() method
+    *
+    */
     this()
     {
         _socket = new TcpSocket();
@@ -71,19 +104,35 @@ class FtpClient
         _format = Format.Binary;
     }
     
+    /**
+    * Ftp destructor
+    *
+    * Disconnects from host if connection
+    * is still alive
+    *
+    */
     ~this()
     {
-        //close();
-        // need to implement somekind of lock in order to wait for
-        // Async downloads to finish their work
+        close();
     }
     
+    /**
+    * Adds new authorization scheme
+    *
+    * Params:
+    * username = Username
+    * password = Password
+    */
     void auth(string username, string password)
     {
         _uri.user     = username;
         _uri.password = password;
     }
     
+    /**
+    * Opens ftp connection
+    *
+    */
     void open()
     {
         if ( _connected == true ) return;
@@ -129,7 +178,20 @@ class FtpClient
         }
     }
     
-    void close(ulong line = __LINE__)
+    /** 
+    * Stops any pending download/upload
+    */
+    void stopDownload()
+    {
+        _stopDownload = true;
+        exec("ABOR");
+    }
+    
+    /**
+    * Closes connection with remote server
+    *
+    */
+    void close()
     {
         if (_connected == false){
             return;
@@ -141,6 +203,13 @@ class FtpClient
         _connected = false;
     }
     
+    /** 
+    * Returns list of directories/files/links 
+    * in directory
+    *
+    * Params:
+    * path = Path to the folder which should be listed
+    */
     FtpFile[] list(string path = "/")
     {
         if (_format == Format.Binary)
@@ -164,7 +233,7 @@ class FtpClient
         
         auto stream = FtpStream(sock, 30);
         char[10240] buffer;
-        auto len = stream.read(buffer);
+        auto len = stream.read(buffer, this);
         
         sock.close();
         readResponse();
@@ -186,27 +255,50 @@ class FtpClient
         return files;
     }
     
+    /**
+    * Returns transfer format
+    */
     @property Format format() const
     {
         return _format;
     }
     
-    @property void format(Format format_)
+    /**
+    * Sets transfer format
+    *
+    * Params:
+    * format = Transfer format
+    */
+    @property void format(Format format)
     {
-        _format = format_;
+        _format = format;
     }
     
+    /**
+    * Returns transfer mode
+    */
     @property Mode mode() const
     {
         return _mode;
     }
     
-    void mode(Mode mode_)
+    /**
+    * Sets transfer mode
+    * Params:
+    * mode = Transfer mode
+    */
+    void mode(Mode mode)
     {
-        _mode = mode_;
+        _mode = mode;
     }
     
     
+    /**
+    * Returns size of specified file
+    *
+    * Params:
+    * file = Name of file which sizes should be returned
+    */
     size_t size(string file)
     {
         if (_format == Format.Binary)
@@ -226,6 +318,13 @@ class FtpClient
         }
     }
     
+    /**
+    * Creates directory in current working directory with 
+    * specified name
+    *
+    * Params:
+    * name = Name for new directory
+    */
     void createDir(string name)
     {
         auto response = exec("MKD", name);
@@ -236,6 +335,13 @@ class FtpClient
         }
     }
     
+    /**
+    * Deletes directory in current working directory with 
+    * specified name
+    *
+    * Params:
+    * name = Name of the directory to delete
+    */
     void deleteDir(string name)
     {
         auto response = exec("RMD", name);
@@ -246,6 +352,13 @@ class FtpClient
         }
     }
     
+    /**
+    * Renames file/directory/link
+    *
+    * Params:
+    * oldName = Old name of file
+    * newName = New name of file
+    */
     void rename(string oldName, string newName)
     {
         auto response = exec("RNFR", oldName);
@@ -261,6 +374,13 @@ class FtpClient
         }
     }
     
+    /**
+    * Deletes file in current working directory with 
+    * specified name
+    *
+    * Params:
+    * name = Name of the file to delete
+    */
     void deleteFile(string filename)
     {
         auto response = exec("DELE", filename);
@@ -271,6 +391,10 @@ class FtpClient
         }
     }
     
+    /**
+    * Returns current working directory
+    *
+    */
     string currentDir()
     {
         auto response = exec("PWD");
@@ -292,6 +416,13 @@ class FtpClient
         return resp[startPos + 1..endPos];
     }
     
+    
+    /**
+    * Changes working directory
+    *
+    * Params:
+    * path = Path to new working directory
+    */
     void changeWorkingDir(string path)
     {
         auto response = exec("CWD", path);
@@ -301,12 +432,95 @@ class FtpClient
         }
     }
     
-    void download()(string remoteFile, string localFile, bool resume = true)
+    /**
+    * Uploads local file to remote server
+    *
+    * Params:
+    * localFile  = Path/Name of the file to upload
+    * remoteFile = Desination name for remote file
+    * resume     = Resumes transfer or starts from begining
+    */
+    size_t upload(string localFile, string remoteFile, bool resume = true)
     {
-        download(remoteFile, new BufferedFile(localFile, FileMode.Out, bufferSize), resume);
+        return upload(new BufferedFile(localFile, FileMode.In, bufferSize), remoteFile, resume);
     }
     
-    void download()(string remoteFile, Stream localFile, bool resume = true)
+    /**
+    * Uploads local file to remote server
+    *
+    * Params:
+    * localFile  = Stream for source file
+    * remoteFile = Desination name for remote file
+    * resume     = Resumes transfer or starts from begining
+    */
+    size_t upload(BufferedFile localFile, string remoteFile, bool resume = true)
+    {
+        writeln("Anyone calling me?");
+        if (_format == Format.Binary)
+        {
+            exec("TYPE I");
+        }
+        else
+        {
+            exec("TYPE A");
+        }
+        
+        size_t totalSize;
+        if (Progress !is null)
+        {
+            totalSize = size(remoteFile);
+        }
+    
+        auto info = requestDataSocket();
+        auto sock = createDataSocket(info);
+        
+        if ( resume == true )
+        {
+            ulong size = size(remoteFile);
+            localFile.position(size);
+            exec("REST", size);
+        }
+        exec("STOR", remoteFile);
+        writeln("STORING>>", remoteFile);
+    
+        ubyte[bufferSize] buffer;
+        ptrdiff_t len = 0;
+        size_t totalLen;
+        
+        enum convtime = convert!("seconds", "hnsecs")(60);
+        ulong timeOut = Clock.currStdTime() + convtime;
+    
+        while (Clock.currStdTime() < timeOut)
+        {
+            len = localFile.read(buffer);
+            if (len < 1) break;
+            
+            sock.send(buffer[0..len]);
+            totalLen += len;
+            
+            if (Progress !is null)
+            {
+                Progress(totalLen, totalSize);
+            }
+            
+            timeOut = Clock.currStdTime() + convtime;
+        }
+
+    
+        sock.close();
+        localFile.close();
+        
+        readResponse();
+        
+        return totalLen;
+    }
+    
+    size_t download()(string remoteFile, string localFile, bool resume = true)
+    {
+        return download(remoteFile, new BufferedFile(localFile, FileMode.Out, bufferSize), resume);
+    }
+    
+    size_t download()(string remoteFile, Stream localFile, bool resume = true)
     {
         if (_format == Format.Binary)
         {
@@ -344,6 +558,12 @@ class FtpClient
     
         while (Clock.currStdTime() < timeOut)
         {
+            if (_stopDownload)
+            {
+                _stopDownload = false;
+                return totalLen;
+            }
+            
             len = sock.receive(buffer);
             if (len < 1) break;
             
@@ -363,17 +583,163 @@ class FtpClient
         localFile.close();
         
         readResponse();
+        
+        return totalLen;
+    }
+    
+    size_t put(T)(string filename, T data, bool append = false)
+    {
+        if (_format == Format.Ascii)
+        {
+            exec("TYPE A");
+        }
+        else
+        {
+            exec("TYPE I");
+        }
+        
+        size_t totalSize;
+        if (Progress !is null)
+        {
+            totalSize = data.length;
+        }
+    
+        auto info = requestDataSocket();
+        auto sock = createDataSocket(info);
+        
+        /*if ( resume == true )
+        {
+            ulong size = size(filename);
+            localFile.position(size);
+            exec("REST", size);
+        }*/
+        if (append == false)
+        {
+            exec("STOR", filename);
+        }
+        else
+        {
+            exec("APPE", filename);
+        }
+        
+        writeln("PUTTING >>", filename);
+    
+        ptrdiff_t len = 0;
+        size_t totalLen;
+        size_t buffsize;
+        
+        enum convtime = convert!("seconds", "hnsecs")(60);
+        ulong timeOut = Clock.currStdTime() + convtime;
+    
+        while (Clock.currStdTime() < timeOut)
+        {
+            if (totalLen == data.length) break;
+            
+            if (totalLen + bufferSize > data.length)
+            {
+                buffsize =  data.length - totalLen;
+            }
+            else
+            {
+                buffsize = bufferSize;
+            }
+            
+            if (_format == Format.Ascii)
+            {
+                len = sock.send(to!(string)(data[totalLen..totalLen + buffsize]));
+            }
+            else
+            {
+                len = sock.send(data[totalLen..totalLen + buffsize]);
+            }
+            totalLen += len;
+            
+            if (Progress !is null)
+            {
+                Progress(totalLen, totalSize);
+            }
+            
+            timeOut = Clock.currStdTime() + convtime;
+        }
+
+    
+        sock.close();
+        
+        readResponse();
+        
+        return totalLen;
     }
     
     T[] get(T = immutable(char))(string filename, int offset = -1)
     {
-        T[] buff;
-        get(filename, buff, offset);
-        return buff;
+        T[] buffer;
+        size_t totalSize;
+        if (Progress !is null)
+        {
+            totalSize = size(filename);
+        }
+    
+        if (_format == Format.Binary)
+        {
+            exec("TYPE I");
+        }
+        else
+        {
+            exec("TYPE A");
+        }
+
+        auto info = requestDataSocket();
+        auto sock = createDataSocket(info);
+        
+        if ( offset > 0 )
+        {
+            exec("REST", offset);
+        }
+        exec("RETR", filename);
+        
+        void[bufferSize] buff = void;
+        size_t totalLen;
+        
+        enum convtime = convert!("seconds", "hnsecs")(60);
+        ulong timeOut = Clock.currStdTime() + convtime;
+        
+        while (Clock.currStdTime() < timeOut)
+        {
+            if (_stopDownload)
+            {
+                _stopDownload = false;
+                return buffer;
+            }
+            
+            auto len = sock.receive(buff);
+            
+            if (len < 1) 
+            {
+                break;
+            }
+        
+            buffer ~= cast(T[])buff[0..len];
+            totalLen += len;
+            
+            if (Progress !is null)
+            {
+                Progress(totalLen, totalSize);
+            }
+        
+            if (len < bufferSize)
+            {
+            //break;
+            }
+            timeOut = Clock.currStdTime() + convtime;
+        }
+        
+        sock.close();
+        readResponse();
+        
+        return buffer;
     }
     
-    size_t get(T = ubyte)(string remoteFile, ref T[] buffer, int offset = -1)
-    if (!isStaticArray!(T[])) // append
+    size_t get()(string remoteFile, scope void delegate(void[] data, size_t received) func, int offset = -1)
     {
         size_t totalSize;
         if (Progress !is null)
@@ -407,6 +773,12 @@ class FtpClient
         
         while (Clock.currStdTime() < timeOut)
         {
+            if (_stopDownload)
+            {
+                _stopDownload = false;
+                return totalLen;
+            }
+            
             auto len = sock.receive(buff);
             
             if (len < 1) 
@@ -414,7 +786,7 @@ class FtpClient
                 break;
             }
         
-            buffer ~= cast(typeof(buffer[0])[])buff[0..len];
+            func(buff[0..len], len);
             totalLen += len;
             
             if (Progress !is null)
@@ -422,10 +794,6 @@ class FtpClient
                 Progress(totalLen, totalSize);
             }
         
-            if (len < bufferSize)
-            {
-            //break;
-            }
             timeOut = Clock.currStdTime() + convtime;
         }
         
@@ -434,9 +802,9 @@ class FtpClient
         
         return totalLen;
     }
-
+    
     size_t get(T)(string remoteFile, ref T buffer, int offset = -1)
-    if (isStaticArray!(T) && isMutable!(T))
+    if (isMutable!(T) && !isDelegate!(T))
     {
         size_t totalSize;
     
@@ -466,10 +834,10 @@ class FtpClient
         auto stream = FtpStream(sock, 60); 
         if (Progress !is null)
         {
-            //stream.Progress = (size_t current) { Progress(current, totalSize); };
+            stream.Progress = (size_t current) { Progress(current, totalSize); };
         }
         
-        auto len = stream.read(buffer);
+        auto len = stream.read(buffer, this);
         sock.close();
         readResponse();
         
@@ -610,7 +978,7 @@ struct FtpFile
         
         Type  	 	_type;
         string 		_chmodString;
-        ushort		_chmod;
+        ubyte[3]	_chmod;
         uint		_childs;
         string		_user;
         string 		_group;
@@ -635,7 +1003,7 @@ struct FtpFile
         return _chmodString;
     }
 
-    @property ushort chmod() const
+    @property ubyte[3] chmod() const
     {
         return _chmod;
     }
@@ -861,31 +1229,55 @@ struct FtpFile
     void parseEplf(){}
     void parseDos(){}
     
-    ushort parseChmod(const(char)[] chmod)
+    ubyte[3] parseChmod(const(char)[] chmod)
     {
-        enforce(chmod.length == 9);
-        ushort octalChmod = octal!(000);
+        ubyte[3] octalChmod = 0;
         
         auto owner = chmod[0..3];
         if (owner[0] == 'r')
         {
-            octalChmod += octal!(100);
+            octalChmod[0] += 4;
         } 
         else if (owner[1] == 'w')
         {
-            octalChmod += octal!(200);
+            octalChmod[0] += 2;
         }
         else if (owner[2] == 'x')
         {
-            octalChmod += octal!(300);
+            octalChmod[0] += 1;
         }
 
         auto group = chmod[3..6];
+        if (group[0] == 'r')
+        {
+            octalChmod[1] += 4;        
+        }
+        else if(group[1] == 'w')
+        {
+            octalChmod[1] += 2; 
+        }
+        else if(group[2] == 'x')
+        {
+            octalChmod[1] += 1;
+        }
+     
         auto other = chmod[6..9];
-        
+        if (other[0] == 'r')
+        {
+            octalChmod[2] += 4; 
+        }
+        else if(other[1] == 'w')
+        {
+            octalChmod[2] += 2; 
+        }
+        else if(other[2] == 'x')
+        {
+            octalChmod[2] += 1; 
+        }
+     
         writeln("owner: ", owner, "group: ", group, "other: ", other);
         
-        return octal!(000);
+        return octalChmod;
     }
 }
 
@@ -938,7 +1330,7 @@ struct FtpStream
         return totalLen;
     }
     
-    size_t read(T)(ref T resp)
+    size_t read(T)(ref T resp, FtpClient cli)
     if ( isMutable!(T) &&
         (is(Unqual!(typeof(T[0])) : char) ||
         is(Unqual!(typeof(T[0])) : ubyte)) )
@@ -951,6 +1343,12 @@ struct FtpStream
         
         while (Clock.currStdTime() < timeOut && totalLen < resp.length)
         {
+            if (cli._stopDownload)
+            {
+                cli._stopDownload = false;
+                return totalLen;
+            }
+            
             len = _socket.receive(buff);
     
             if (len < 1)
@@ -989,99 +1387,8 @@ class FtpException : Exception
         code = response.code;
         msg = response.msg;
         
-        super("\n" ~ file ~ "(" ~ to!(string)(line) ~ ")\t" ~ "\t" ~ 
-              to!(string)(response.code) ~ ": " ~ response.msg);
-    }
-}
-
-debug(Ftp)
-{
-    import std.string, std.datetime;
-    
-    void main()
-    {
-        auto ftp = new FtpClient(new Uri("ftp://ftp.mydevil.net", 21));
-        ftp.auth("f11127_naz", "naz");
-        //auto ftp = new FtpClient(new Uri("ftp://ftp.digitalmars.com"));
-        // auto ftp = new FtpClient(new Uri("ftp://driv.pl", 5999));
-        //ftp.auth("naz", "naz");
-        
-        ftp.open();
-        auto files = ftp.list();
-        
-        foreach(file; files)
-        writeln(file.chmod);
-        //        size_t filesize;
-        //        auto start = Clock.currStdTime();
-        //        ftp.Progress = (size_t current, size_t total) 
-        //        { 
-        //        	filesize = total;
-        //    	};
-        //    	auto end = Clock.currStdTime();
-        //    	
-        //        ftp.download("benjamin.mp3", "dmc.mp3", false);
-        
-        //writeln(z);
-        //writeln(buff[0..z]);
-        //string c = ftp.get("index.php");
-        //ftp.createDir("chujmuje");
-        
-        
-        
-        /*char[10000] buffer;
-        auto bytes = ftp.get("index.php", buffer);
-        writeln(buffer[0..bytes]);
-        
-        string index_php = ftp.get("index.php");
-        writeln(index_php);
-        
-        ftp.download("index.php", "local1.php");
-        ftp.download("index.php", "local2.php");
-        ftp.download("index.php", "local3.php");
-        ftp.download("index.php", "local4.php");
-        ftp.download("index.php", "local5.php");
-        
-        ftp.list();
-        ftp.list();*/
-        ftp.close();
-        auto s = readln();
-        /+ 
-        auto ftp2 = new FtpClient("***", 21, "***", "***");
-        ftp2.open();
-        
-        /*
-        * download to custom buffer 
-        */
-        ubyte[] buffer;
-        ftp2.download("benjamin.mp3", buffer);
-        
-        /*
-        * download to custom Stream
-        */
-        ftp2.download("benjamin.mp3", new File("myFile.mp3", FileMode.Out));
-        
-        /*
-        * download content to string
-        */
-        string content = ftp2.download("index.php");
-        
-        /*
-        * download content to specicifed type array,
-        * in this case "ubyte" -> "ubyte[]"
-        */
-        ubyte[] mp3 = ftp2.download!(ubyte)("benjamin.mp3");
-        
-        /*
-        * download file in background, in new thread
-        */
-        ftp2.downloadAsync("benjamin.mp3", "benjamin_copy.mp3");    
-        
-        /*
-        * download file by 3 bytes chunks 
-        */ 
-        foreach (ubyte[] cur; ftp2.downloadByChunk!(3)("index.php") )
-        {
-        writeln( cast(string) cur);
-        }+/
+        super("\n"~to!(string)(response.code) ~ ": " ~ response.msg ~ 
+             "\n" ~ file ~ "(" ~ to!(string)(line) ~ ")\t" ~ "\t" 
+         );
     }
 }
