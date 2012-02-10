@@ -381,43 +381,33 @@ class HttpClient
         get(new BufferedFile(localFile, FileMode.Out));
     }
     
-    /**
-     * Gets contetns and saves into stream
-     * 
-     * Params:
-     *  localStream = Stream to write contents
-     */
-    void get()(Stream localStream)
+    size_t get()(scope void delegate(void[] data) func)
     {
         if ( responseHeaders.code() != 200 ) 
         {
-            return;
+            return 0;
         }
         
-        ubyte[bufferSize] buffer;
+        void[bufferSize] _char = void;
+        
         sizediff_t len;
+        size_t totalLen = 0;
         
         while (true)
         {
-            len = _sock.receive(buffer);
+            len = _sock.receive(_char);
+            if (len < 1) break;
+           
+            func(_char);
             
-            if ( len <= 0 )
-            {
-                break;
-            }
-            
-            localStream.write(buffer[0..len]);
+            totalLen += len;
+           
+            //if ( len < bufferSize ) break;
         }
         
-        localStream.close();
+        return totalLen;
     }
     
-    /**
-     * Returns contents
-     * 
-     * Returns:
-     *  Page contents
-     */
     T[] get(T = immutable(char))()
     {
         if ( responseHeaders.code() != 200 ) 
@@ -426,41 +416,65 @@ class HttpClient
         }
         
         T[] buffer;
-        
-        get(buffer);
-        
-        return buffer[0..$];
-    }
-    
-    /**
-     * Returns contents with operating on specified buffer
-     * 
-     * Params:
-     *  buffer  =   Buffer to work on
-     * 
-     * Returns:
-     *  Contents
-     */
-    T[] get(T = immutable(char))(T[] buffer)
-    {
-        if ( responseHeaders.code() != 200 ) 
+
+        if ( responseHeaders["content-lenght"] !is null )
         {
-            return null;
+            buffer = new T[ responseHeaders["content-lenght"] ];
         }
+        else
+        {
+            buffer = new T[bufferSize];
+        }
+
+        void[bufferSize] _char;
         
-        ubyte[bufferSize] _char;
         sizediff_t len;
         
         while (true)
         {
-           len = _sock.receive(_char);
-           if ( len < 1 ) break;
+            len = _sock.receive(_char);
+            if (len < 1) break;
            
-           buffer~= cast(T[]) _char[0..len];
+            buffer ~= cast(T[]) _char[0..len];
         }
         
         return buffer[0..$];
+    }
+    
+    size_t get(T)(ref T buffer)
+    if (isMutable!(T) && ( is(Unqual!(typeof(T[0])) : char) ||
+         is(Unqual!(typeof(T[0])) : ubyte) || is(Unqual!(typeof(T[0])) : void)))
+    {
+        if ( responseHeaders.code() != 200 ) 
+        {
+            return 0;
+        }
+        
+        typeof(T[0])[bufferSize] _char = void;
+        
+        sizediff_t len;
+        size_t totalLen = 0;
+        
+        while (true)
+        {
+            len = _sock.receive(_char);
+            if (len < 1) break;
+           
+            if (totalLen + len > buffer.length) {
+                buffer[totalLen..$] = _char[0..buffer.length - totalLen];
+                return totalLen;
+            } else {
+                buffer[totalLen..totalLen+len] = _char[0..len];
+            }
+            
+            totalLen += len;
+           
+            if ( len < bufferSize ) break;
+        }
+        
+        return totalLen;
     }   
+    
     
     /**
      * Returns: Request method
