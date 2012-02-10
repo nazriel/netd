@@ -137,7 +137,6 @@ struct Uri
         Smtp     = "smtp",        
         Unknown  = "",          
     }
-    alias Scheme this;
     
     protected
     {        
