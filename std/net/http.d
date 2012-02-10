@@ -3,12 +3,14 @@
  */
 module std.net.http;
 
-import std.socket 		: Socket, TcpSocket, InternetAddress;
+import std.socket       : Socket, TcpSocket, InternetAddress, SocketOptionLevel, SocketOption;
 import std.stream       : Stream, BufferedFile, FileMode;
-import std.string 		: strip, toLower, indexOf, splitLines;
-import std.conv 		: to, parse;
-import std.traits 		: isSomeString;
+import std.string       : strip, toLower, indexOf, splitLines;
+import std.conv         : to, parse;
+import std.traits       : isSomeString, isMutable, Unqual;
 import std.net.uri;
+
+import core.time;
 
 import std.zlib;
 
@@ -152,6 +154,12 @@ class Headers
     {
         return get(name);
     }
+    
+    void opIndexAssign(string value, string name) 
+    {
+        set(name, value);
+    }
+    
 
     int opApply (int delegate(ref Header) dg)
     {
@@ -357,7 +365,15 @@ class HttpClient
         if ( (_responseHeaders.code == 301 || _responseHeaders.code == 302 || _responseHeaders.code == 303 ) && 
                 FollowLocation == true && _responseHeaders.exist("Location") )
         {
-            _uri.parse(_responseHeaders["Location"]);
+            _uri.parse(_responseHeaders["Location"]);  string opIndex(string name)
+    {
+        return get(name);
+    }
+    
+    void opIndexAssign(string value, string name) {
+        set(name, value);
+    }
+    
             debug(Http) {
                 writeln("Redirecting");
             }
