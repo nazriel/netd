@@ -15,6 +15,8 @@ import std.string : indexOf;
 import std.conv   : to;
 import std.array  : split;
 
+static import std.uri;
+
 /** 
  * Represents query parameter
  */
@@ -122,19 +124,19 @@ struct UriQuery
  * assert(uri.path == "/path");
  * ---------
  */
-struct Uri
+class Uri
 {
     /**
      * URI schemes
      */
     enum Scheme : string
     {
-        Http     = "http",
-        Https    = "https",
-        Ftp      = "ftp",
-        Ftps     = "ftps",
-        Irc      = "irc",
-        Smtp     = "smtp",        
+        Http     = "HTTP",
+        Https    = "HTTPS",
+        Ftp      = "FTP",
+        Ftps     = "FTPS",
+        Irc      = "IRC",
+        Smtp     = "SMTP",        
         Unknown  = "",          
     }
     
@@ -564,9 +566,9 @@ struct Uri
      * auto uri = Uri.parseUri("http://domain.com", 80);
      * --------
      */
-    static ref Uri parseUri(string uri, ushort port)
+    static Uri parseUri(string uri, ushort port)
     {
-        return Uri(uri, port);
+        return new Uri(uri, port);
     }
     
     /**
@@ -583,9 +585,20 @@ struct Uri
      * auto uri = Uri.parseUri("http://domain.com");
      * --------
      */
-    static ref Uri parseUri(string uri)
+    static Uri parseUri(string uri)
     {
-        return Uri(uri);
+        return new Uri(uri);
+    }
+
+
+    static string encode(string uri)
+    {
+        return std.uri.encode(uri);
+    }
+    
+    static string decode(string uri)
+    {
+        return std.uri.decode(uri);
     }
 }
 
