@@ -44,7 +44,7 @@
 module std.net.http;
 
 import std.socket;
-import std.socketstream;
+import std.stream;
 import std.string;
 import std.conv;
 
@@ -237,7 +237,6 @@ class Http
 	private RequestMethod _requestMethod;
 	private uint _redirectsCount = 0;
 	private Socket _socket;
-	private SocketStream _stream;
 	private AddressFamily _family;
 	private uint _responseCode;
 	private HttpPostData _postData;
@@ -299,19 +298,30 @@ class Http
 	
 	private void ParseResponseHeaders()
 	{
-		char[4096] lineBuffer;
 		size_t colonPosition;
-		
-		while (!_stream.eof)
+        char[10240] buffer;
+        void[1] Char = void;
+        size_t len = 0;
+        size_t totalLen = 0;
+
+        while (_socket.isAlive)
+        {
+            if ( totalLen > 4 )
+            {
+                if ( buffer[totalLen - 4 .. totalLen] == "\r\n\r\n" )
+                {
+                    break;
+                }
+            }
+            len = _socket.receive(Char);
+            if ( len < 1 ) break;
+
+            buffer[totalLen++] = (cast(char[]) Char)[0];
+        }
+
+        foreach (line; splitLines(buffer[0..totalLen]))
 		{
-			char[] line = _stream.readLine(lineBuffer);
-			
-			if (line == "")
-			{
-				break;
-			}
-			
-			colonPosition = indexOf(line, ": ");
+            colonPosition = indexOf(line, ": ");
 			char[] headerName;
 			char[] headerValue;
 			
@@ -367,7 +377,6 @@ class Http
 			throw new HttpException("Unable to connect " ~ _uri.host ~ ": " ~ e.toString());
 			
 		}
-		_stream = new SocketStream(_socket);
 		
 		if (requestHeaders["Host"] is null)
 		{
@@ -463,7 +472,7 @@ class Http
 			return;
 		}
 		
-		_stream.close();
+		_socket.close();
 	}
 	
 	public bool keepAlive() const @property
@@ -488,23 +497,29 @@ class Http
 	
 	void read(scope void delegate(void[]) sink)
 	{
-		while (!_stream.eof)
-		{
-			char[4096] buff;
-			auto buffer = _stream.readLine(buff);
-			sink(cast(void[])buffer);
-		}
+		void[4096] buff = void;
+        size_t received;
+
+        while (_socket.isAlive)
+        {
+            received = _socket.receive(buff);
+            if (received < 1) break;
+            sink(buff[0..received]);
+        }
 	}
 	
 	void write(void[] data)
 	{
-		_stream.writeExact(data.ptr, data.length);
-	}
-	
-	public size_t download(string localFile)
-	{
-		
-		return 0;
+		size_t totalSend;
+
+        while (_socket.isAlive)
+        {
+            totalSend = _socket.send(data);
+            if (totalSend == data.length)
+            {
+                break;
+            }
+        }
 	}
 	
 	public char[] get(char[] buffer = null)
@@ -584,25 +599,40 @@ class Http
 		requestHeaders.remove("Host");
 	}
 	
+    public size_t download(string localFile)
+    {
+        if (!connectionAlive)
+            connect();
+
+        BufferedFile file = new BufferedFile(localFile, FileMode.Append);
+        size_t totalLen;
+
+        file.seekEnd(file.size);
+
+        read( (void[] data)
+        {
+            totalLen += data.length;
+            file.write(cast(ubyte[])data);
+        });
+
+        file.close();
+
+        return totalLen;
+    }
+
 	public static char[] simpleGet(string url)
 	{
 		scope Http http = new Http(url);
 		return http.get();
 	}
 	
-	public static char[] simpleGet(Uri url)
-	{
-		scope Http http = new Http(url);
-		return http.get();
-	}
-	
+	public static size_t simpleDownload(string url, string file)
+    {
+        scope Http http = new Http(url);
+        return http.download(file);
+    }
+
 	public static char[] simplePost(string url, HttpPostData data)
-	{
-		scope Http http = new Http(url);
-		return http.post(data);
-	}
-	
-	public static char[] simplePost(Uri url, HttpPostData data)
 	{
 		scope Http http = new Http(url);
 		return http.post(data);
