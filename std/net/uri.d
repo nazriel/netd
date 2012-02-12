@@ -3,7 +3,7 @@
  *
  * Parse URI (Uniform Resource Identifiers) into parts described in RFC, based on tango.net.uri and GIO
  *
- * Authors: $(WEB github.com/robik, Robert 'Robik' Pasiński), $(WEB driv.pl/, Damian 'nazriel' Ziemba)
+ * Authors: $(WEB github.com/robik, Robert 'Robik' Pasiński), $(WEB dzfl.pl/, Damian 'nazriel' Ziemba)
  * Copyright: Robert 'Robik' Pasiński, Damian 'nazriel' Ziemba 2011
  * License: $(WEB http://www.boost.org/users/license.html, Boost license)
  *

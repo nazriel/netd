@@ -82,7 +82,7 @@ class HttpHeaders
 		return null;
 	}
 	
-    int opApply (int delegate(string, string) dg)
+    int opApply (int delegate(ref string, ref string) dg)
     {
         int      result = 0;
 		
@@ -189,7 +189,7 @@ struct HttpPostData
 		return null;
 	}
 	
-    int opApply (int delegate(string, string) dg)
+    int opApply (int delegate(ref string, ref string) dg)
     {
         int      result = 0;
 		
@@ -607,11 +607,4 @@ class Http
 		scope Http http = new Http(url);
 		return http.post(data);
 	}
-}
-
-import std.stdio;
-
-void main()
-{
-    writeln( Http.simpleGet("http://www.google.com/search?hl=en&q=%20D%20Programming%20Language&btnI=I%27m+Feeling+Lucky") );
 }
