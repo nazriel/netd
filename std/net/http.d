@@ -604,10 +604,8 @@ class Http
         if (!connectionAlive)
             connect();
 
-        BufferedFile file = new BufferedFile(localFile, FileMode.Append);
+        BufferedFile file = new BufferedFile(localFile, FileMode.OutNew);
         size_t totalLen;
-
-        file.seekEnd(file.size);
 
         read( (void[] data)
         {
