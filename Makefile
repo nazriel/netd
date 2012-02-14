@@ -1,5 +1,5 @@
 
-export PROJECT_NAME     = std.net
+export PROJECT_NAME     = netd
 export AUTHOR           = Nazriel and Robik 
 export DESCRIPTION      = Networking package including http, ftp, smtp for D programming lanaguage
 export VERSION          = 1
