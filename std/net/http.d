@@ -41,14 +41,14 @@
  * TODO: Http over SSL, (Head, Put, Delete etc), Resuming transfers.
  * 
  */
-module std.net.http;
+module netd.http;
 
 import std.socket;
 import std.stream;
 import std.string;
 import std.conv;
 
-import std.net.uri;
+import netd.uri;
 import std.base64;
 
 class HttpException : Exception

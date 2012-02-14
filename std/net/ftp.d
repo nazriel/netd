@@ -1,6 +1,6 @@
-module std.net.ftp;
+module netd.ftp;
 
-import std.net.uri;
+import netd.uri;
 import std.socket, std.stream, std.conv;
 import std.traits;
 import std.typecons, std.array, std.string;

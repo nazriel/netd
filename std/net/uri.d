@@ -9,7 +9,7 @@
  *
  * Source: $(REPO std/net/uri.d)
  */
-module std.net.uri;
+module netd.uri;
 
 import std.string : indexOf;
 import std.conv   : to;

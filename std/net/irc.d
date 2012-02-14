@@ -4,14 +4,14 @@
  * Authors:
  *  
  */
-module std.net.irc;
+module netd.irc;
 /// TODO: \x03COLORCODE?
 import std.socket : TcpSocket, InternetAddress;
 import std.socketstream;
 import std.stdio;
 import std.string : split, indexOf, toUpper;
 import std.array : join;
-import std.net.uri;
+import netd.uri;
 
 
 /**
