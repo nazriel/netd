@@ -1,8 +1,7 @@
-
 export PROJECT_NAME     = netd
-export AUTHOR           = Nazriel and Robik 
+export AUTHOR           = Nazriel and Robik
 export DESCRIPTION      = Networking package including http, ftp, smtp for D programming lanaguage
-export VERSION          = 1
+export VERSION          = 1.0.0
 export LICENSE          =
 export ROOT_SOURCE_DIR  = netd
 DDOCFILES               = cutedoc.ddoc modules.ddoc settings.ddoc
@@ -17,6 +16,11 @@ HEADERS             = $(patsubst %.d,$(IMPORT_PATH)$(PATH_SEP)%.di,  $(SOURCES))
 DOCUMENTATIONS      = $(patsubst %.d,$(DOC_PATH)$(PATH_SEP)%.html,   $(SOURCES))
 DDOCUMENTATIONS     = $(patsubst %.d,$(DDOC_PATH)$(PATH_SEP)%.html,  $(SOURCES))
 DDOC_FLAGS          = $(foreach macro,$(DDOCFILES), $(DDOC_MACRO)$(macro))
+space :=
+space +=
+
+stripBugfix = $(subst $(space),.,$(strip $(wordlist 1, 2, $(subst ., ,$(1)))))
+
 define make-lib
 	$(MKDIR) $(DLIB_PATH)
 	$(AR) rcs $(DLIB_PATH)$(PATH_SEP)$@ $^
@@ -26,7 +30,7 @@ endef
 ############# BUILD #############
 all: static-lib header doc pkgfile-static
 	@echo ------------------ Building $^ done
-all-shared: static-shared header doc pkgfile-shared
+all-shared: shared-lib header doc pkgfile-shared
 	@echo ------------------ Building $^ done
 
 .PHONY : pkgfile
@@ -62,7 +66,7 @@ pkgfile-shared:
 	@echo prefix=$(PREFIX)                                              >> $(PKG_CONFIG_FILE)
 	@echo exec_prefix=$(PREFIX)                                         >> $(PKG_CONFIG_FILE)
 	@echo libdir=$(LIB_DIR)                                             >> $(PKG_CONFIG_FILE)
-	@echo includedir=$(INCLUDE_DIR)sqlite                               >> $(PKG_CONFIG_FILE)
+	@echo includedir=$(INCLUDE_DIR)                                     >> $(PKG_CONFIG_FILE)
 	@echo                                                               >> $(PKG_CONFIG_FILE)
 	@echo Name: "$(PROJECT_NAME)"                                       >> $(PKG_CONFIG_FILE)
 	@echo Description: "$(DESCRIPTION)"                                 >> $(PKG_CONFIG_FILE)
@@ -81,7 +85,7 @@ pkgfile-static:
 	@echo prefix=$(PREFIX)                                              >> $(PKG_CONFIG_FILE)
 	@echo exec_prefix=$(PREFIX)                                         >> $(PKG_CONFIG_FILE)
 	@echo libdir=$(LIB_DIR)                                             >> $(PKG_CONFIG_FILE)
-	@echo includedir=$(INCLUDE_DIR)sqlite                               >> $(PKG_CONFIG_FILE)
+	@echo includedir=$(INCLUDE_DIR)                                     >> $(PKG_CONFIG_FILE)
 	@echo                                                               >> $(PKG_CONFIG_FILE)
 	@echo Name: "$(PROJECT_NAME)"                                       >> $(PKG_CONFIG_FILE)
 	@echo Description: "$(DESCRIPTION)"                                 >> $(PKG_CONFIG_FILE)
@@ -100,7 +104,8 @@ $(LIBNAME): $(OBJECTS)
 $(SONAME): $(PICOBJECTS)
 	@echo ------------------ Building shared library
 	$(MKDIR) $(DLIB_PATH)
-	$(DC) -shared $(OUTPUT)$(DLIB_PATH)$(PATH_SEP)$@.$(VERSION) $^
+	$(DC) -shared $(SONAME_FLAG) $@.$(call stripBugfix,$(VERSION)) $(OUTPUT)$@.$(call stripBugfix,$(VERSION)) $^
+	#~ $(CC) -shared -Wl,-soname,$@.$(VERSION) -o $@.$(VERSION) $^
 
 # create object files
 $(BUILD_PATH)$(PATH_SEP)%.o : %.d
@@ -183,7 +188,8 @@ install-static-lib:
 install-shared-lib:
 	$(MKDIR) $(DESTDIR)$(LIB_DIR)
 	$(CP) $(DLIB_PATH)$(PATH_SEP)$(SONAME) $(DESTDIR)$(LIB_DIR)
-	ln -s $(DESTDIR)$(LIB_DIR)$(SONAME).$(SO_VERSION)   $(DESTDIR)$(LIB_DIR)$(PATH_SEP)$(SONAME)
+	cd $(DESTDIR)$(LIB_DIR)$(PATH_SEP) & $(LN) $(SHARED_LIBNAME).$(call stripBugfix,$(VERSION)) $(SHARED_LIBNAME).$(VERSION)
+	cd $(DESTDIR)$(LIB_DIR)$(PATH_SEP) & $(LN) $(SHARED_LIBNAME).$(VERSION) $(SHARED_LIBNAME)
 	@echo ------------------ Installing shared-lib done
 
 install-header:
