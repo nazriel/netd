@@ -5,7 +5,7 @@ export MAJOR_VERSION    = 1
 export MINOR_VERSION    = 0
 export PATCH_VERSION    = 0
 export PROJECT_VERSION  = $(MAJOR_VERSION).$(MINOR_VERSION).$(PATCH_VERSION)
-export LICENSE          =
+export LICENSE          = Boost
 export ROOT_SOURCE_DIR  = netd
 DDOCFILES               = cutedoc.ddoc modules.ddoc settings.ddoc
 
