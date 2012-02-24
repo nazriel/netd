@@ -1,7 +1,10 @@
 export PROJECT_NAME     = netd
 export AUTHOR           = Nazriel and Robik
 export DESCRIPTION      = Networking package including http, ftp, smtp for D programming lanaguage
-export VERSION          = 1.0.0
+export MAJOR_VERSION    = 1
+export MINOR_VERSION    = 0
+export PATCH_VERSION    = 0
+export PROJECT_VERSION  = $(MAJOR_VERSION).$(MINOR_VERSION).$(PATCH_VERSION)
 export LICENSE          =
 export ROOT_SOURCE_DIR  = netd
 DDOCFILES               = cutedoc.ddoc modules.ddoc settings.ddoc
@@ -70,7 +73,7 @@ pkgfile-shared:
 	@echo                                                               >> $(PKG_CONFIG_FILE)
 	@echo Name: "$(PROJECT_NAME)"                                       >> $(PKG_CONFIG_FILE)
 	@echo Description: "$(DESCRIPTION)"                                 >> $(PKG_CONFIG_FILE)
-	@echo Version: "$(VERSION)"                                         >> $(PKG_CONFIG_FILE)
+	@echo Version: "$(PROJECT_VERSION)"                                 >> $(PKG_CONFIG_FILE)
 	@echo Libs: $(LINKERFLAG)-l$(PROJECT_NAME)-$(COMPILER)              >> $(PKG_CONFIG_FILE)
 	@echo Cflags: -I$(INCLUDE_DIR)$(PATH_SEP)$(PROJECT_NAME) $(LDCFLAGS)>> $(PKG_CONFIG_FILE)
 	@echo                                                               >> $(PKG_CONFIG_FILE)
@@ -89,7 +92,7 @@ pkgfile-static:
 	@echo                                                               >> $(PKG_CONFIG_FILE)
 	@echo Name: "$(PROJECT_NAME)"                                       >> $(PKG_CONFIG_FILE)
 	@echo Description: "$(DESCRIPTION)"                                 >> $(PKG_CONFIG_FILE)
-	@echo Version: "$(VERSION)"                                         >> $(PKG_CONFIG_FILE)
+	@echo Version: "$(PROJECT_VERSION)"                                 >> $(PKG_CONFIG_FILE)
 	@echo Libs: $(LIB_DIR)$(PATH_SEP)$(LIBNAME)                         >> $(PKG_CONFIG_FILE)
 	@echo Cflags: -I$(INCLUDE_DIR)$(PATH_SEP)$(PROJECT_NAME) $(LDCFLAGS)>> $(PKG_CONFIG_FILE)
 	@echo                                                               >> $(PKG_CONFIG_FILE)
@@ -104,8 +107,8 @@ $(LIBNAME): $(OBJECTS)
 $(SONAME): $(PICOBJECTS)
 	@echo ------------------ Building shared library
 	$(MKDIR) $(DLIB_PATH)
-	$(DC) -shared $(SONAME_FLAG) $@.$(call stripBugfix,$(VERSION)) $(OUTPUT)$@.$(call stripBugfix,$(VERSION)) $^
-	#~ $(CC) -shared -Wl,-soname,$@.$(VERSION) -o $@.$(VERSION) $^
+	$(CC) -shared -Wl,-soname,$@.$(MAJOR_VERSION) -o $(DLIB_PATH)$(PATH_SEP)$@.$(MAJOR_VERSION) $^
+# $(DC) -shared $(SONAME_FLAG) $@.$(MAJOR_VERSION) $(OUTPUT)$(DLIB_PATH)$(PATH_SEP)$@.$(MAJOR_VERSION) $^
 
 # create object files
 $(BUILD_PATH)$(PATH_SEP)%.o : %.d
@@ -188,8 +191,8 @@ install-static-lib:
 install-shared-lib:
 	$(MKDIR) $(DESTDIR)$(LIB_DIR)
 	$(CP) $(DLIB_PATH)$(PATH_SEP)$(SONAME) $(DESTDIR)$(LIB_DIR)
-	cd $(DESTDIR)$(LIB_DIR)$(PATH_SEP) & $(LN) $(SHARED_LIBNAME).$(call stripBugfix,$(VERSION)) $(SHARED_LIBNAME).$(VERSION)
-	cd $(DESTDIR)$(LIB_DIR)$(PATH_SEP) & $(LN) $(SHARED_LIBNAME).$(VERSION) $(SHARED_LIBNAME)
+	cd $(DESTDIR)$(LIB_DIR)$(PATH_SEP) & $(LN) $(SHARED_LIBNAME)$(MAJOR_VERSION) $(SHARED_LIBNAME).$(VERSION_PROJECT)
+	cd $(DESTDIR)$(LIB_DIR)$(PATH_SEP) & $(LN) $(SHARED_LIBNAME).$(VERSION_PROJECT) $(SHARED_LIBNAME)
 	@echo ------------------ Installing shared-lib done
 
 install-header:
