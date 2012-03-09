@@ -12,7 +12,7 @@
  
 module netd.https;
 
-import netd.ttp;
+import netd.http;
 import netd.uri;
 import netd.util.sslsocket;
 import std.socket;

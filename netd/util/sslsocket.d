@@ -73,7 +73,7 @@ class SslSocket : Socket
         return rtn;
     }
 
-    override long send(const(void)[] src)
+    override ptrdiff_t send(const(void)[] src)
     {
         if (src.length is 0)
             return 0;
@@ -84,10 +84,10 @@ class SslSocket : Socket
         if (bytes <= 0)
             return 0;
 
-        return cast(size_t) bytes;
+        return cast(ptrdiff_t) bytes;
     }
 
-    override long receive(void[] dst)
+    override ptrdiff_t receive(void[] dst)
     {
         if (!isAlive) return 0;
         if (bio is null) return 0;
@@ -95,7 +95,7 @@ class SslSocket : Socket
         int bytes = BIO_read(bio, dst.ptr, cast(uint)dst.length);
         if (bytes <= 0)
             return 0;
-        return cast(size_t) bytes;
+        return cast(ptrdiff_t) bytes;
     }
 }
 /*
