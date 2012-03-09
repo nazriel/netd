@@ -99,13 +99,20 @@ class HttpHeaders
     
     void remove(string headerName)
     {
-   		foreach (name, value; _header)
-		{
-			if (toLower(name) == toLower(headerName))
-			{
-				_header.remove(name);
-			}
-		}
+
+		_header.remove(name);
+    }
+
+    override string toString()
+    {
+        string res = "[\n";
+        foreach (a,b; _header)
+        {
+            res ~= "\t" ~ a ~ "=" ~ b ~ ",\n";
+        }
+        res ~= "];";
+
+        return res;
     }
 }
 
@@ -131,7 +138,7 @@ struct HttpCookies
 		return null;
 	}
 	
-    int opApply (int delegate(string, string) dg)
+    int opApply (int delegate(ref string, ref string) dg)
     {
         int      result = 0;
 		
@@ -144,6 +151,11 @@ struct HttpCookies
         }
 
         return result;
+    }
+
+    bool opBinaryRight(string op : "in")(string key)
+    {
+        return (key in _cookie) ? true : false;
     }
 }
 
@@ -222,13 +234,20 @@ struct HttpPostData
 	}
 }
 
-private struct HttpResponseStatus
+struct HttpResponseStatus
 {
 	ushort code;
 	const(char)[] message;
 	ushort version_;
 }
-	
+
+enum HttpVersion
+{
+    OnePointZero = 0,
+    OnePointOne  = 1,
+}
+
+
 class Http
 {
 	private enum DefaultUserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:7.0.1) Gecko/20100101 Firefox/7.0.1";
@@ -298,24 +317,22 @@ class Http
 	
 	private void ParseResponseHeaders()
 	{
-		size_t colonPosition;
+        size_t colonPosition;
         char[10240] buffer;
         void[1] Char = void;
         size_t len = 0;
         size_t totalLen = 0;
-
+        
         while (_socket.isAlive)
         {
             if ( totalLen > 4 )
-            {
                 if ( buffer[totalLen - 4 .. totalLen] == "\r\n\r\n" )
-                {
                     break;
-                }
-            }
-            len = _socket.receive(Char);
-            if ( len < 1 ) break;
 
+            len = _socket.receive(Char);
+            if ( len < 1 )
+                break;
+            
             buffer[totalLen++] = (cast(char[]) Char)[0];
         }
 
@@ -346,8 +363,8 @@ class Http
 						}
 					}
 				}
-				
-				responseHeaders[headerName.idup] = headerValue;
+				else
+				    responseHeaders[headerName.idup] = headerValue;
 			}
 			else
 			{
@@ -361,15 +378,19 @@ class Http
                 }
 			}
 		}
-		
 	}
-	
+ 
+    protected Socket CreateSocket(AddressFamily family, SocketType socket, ProtocolType protocol)
+    {
+        return new Socket(family, socket, protocol);
+    }
+
 	public void connect()
 	{
 		try 
 		{
 			auto aa = new InternetAddress(_uri.host, _uri.port);
-			_socket = new Socket(AddressFamily.INET, SocketType.STREAM, ProtocolType.TCP);
+			_socket = CreateSocket(AddressFamily.INET, SocketType.STREAM, ProtocolType.TCP);
 			_socket.connect(aa);
 		}
 		catch (SocketOSException e)
@@ -378,10 +399,7 @@ class Http
 			
 		}
 		
-		if (requestHeaders["Host"] is null)
-		{
-			requestHeaders["Host"] =  _uri.host;
-		}
+		requestHeaders["Host"] =  _uri.host;
 		
 		if (requestHeaders["User-Agent"] is null)
 		{
@@ -432,7 +450,13 @@ class Http
 				request ~= headerName ~ ": " ~ headerValue ~ "\r\n";
 			}
 		}
-		
+        string cookies;
+        foreach (cookieName, cookieValue; RequestHeaders.Cookies)
+        {
+            cookies ~= cookieName ~ "=" ~ cookieValue ~ "; ";
+        }
+        request ~= "Cookie: " ~ cookies ~ "\r\n";
+
 		request ~= "\r\n";
 		
 		write(cast(void[]) request);

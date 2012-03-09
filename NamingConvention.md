@@ -28,30 +28,30 @@ Example:
 enum HttpVersion
 {
     OnePointZero,
- 	OnePointOne,
+    OnePointOne,
 }
 ```
  
 Methods and functions
 -------------------------
-Methods and functions, public or private all are PascalCase.
+Methods and functions, public or private all are cascalCase.
 Example:
 
 ```D
 class HttpClient
 {
-    public void Connect()
+    public void connect()
 	{
 	
 	}
 	
-	private bool IsConnectionAlive()
+	private bool isConnectionAlive()
 	{
 		return true;
 	}
 }
  
-HttpClient SimpleHttpConstructor()
+HttpClient simpleHttpConstructor()
 {
  	return new HttpClient;
 }
@@ -65,13 +65,13 @@ Example:
 ```D
 class HttpClient
 {
- 	public void Post(const(char)[] postContentVariable)
+ 	public void post(const(char)[] postContentVariable)
  	{
  	
  	}
 }
  
-void SimplePost(const(char)[] againVariable)
+void simplePost(const(char)[] againVariable)
 {
  
 }
@@ -79,17 +79,17 @@ void SimplePost(const(char)[] againVariable)
  
 Public class/structs members and public @property
 -------------------------
-Above are PascalCase. 
+Above are cascalCase. 
 Example:
 
 ```D
 class HttpClient
 {
- 	public HttpHeaders ResponseHeaders;
+ 	public HttpHeaders responseHeaders;
  	
- 	public HttpHeaders GetResponseHeaders() @property
+ 	public HttpHeaders getResponseHeaders() @property
  	{
- 		return ResponseHeaders;
+ 		return responseHeaders;
  	}
 }
 ```
@@ -117,7 +117,7 @@ Are camelCase.
 Example:
 
 ```D
-void Foo()
+void foo()
 {
  	string myLocalScopeVariable;
 }
