@@ -314,7 +314,7 @@ class FtpClient
         else
         {
             auto _files = list(file);
-            return _files[0].size;
+            return cast(size_t)_files[0].size;
         }
     }
     
@@ -1112,8 +1112,8 @@ struct FtpFile
         _user = to!(string)(truncate[2]);
         _group = to!(string)(truncate[3]);
         _size = to!(ulong)(truncate[4]);
-        _date = parseDate(truncate);
-        _filename = parseFilename(truncate);
+        _date = parseDate(cast(const(char)[][])truncate);
+        _filename = parseFilename(cast(const(char)[][])truncate);
         
         if (_filename != "") {
             _valid = true;

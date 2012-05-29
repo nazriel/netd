@@ -53,4 +53,3 @@ class Https : Http
         return http.post(data);
     }
 }
-

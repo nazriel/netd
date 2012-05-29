@@ -99,8 +99,7 @@ class HttpHeaders
     
     void remove(string headerName)
     {
-
-		_header.remove(name);
+		_header.remove(headerName);
     }
 
     override string toString()
@@ -451,7 +450,7 @@ class Http
 			}
 		}
         string cookies;
-        foreach (cookieName, cookieValue; RequestHeaders.Cookies)
+        foreach (cookieName, cookieValue; requestHeaders.cookies)
         {
             cookies ~= cookieName ~ "=" ~ cookieValue ~ "; ";
         }

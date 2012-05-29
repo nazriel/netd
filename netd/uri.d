@@ -140,9 +140,12 @@ class Uri
         Unknown  = "",          
     }
     
+    alias Scheme this;
+    
     protected
     {        
         Scheme   _scheme;
+        string   _rawscheme;
         string   _domain;
         ushort   _port;
         string   _path;
@@ -191,13 +194,15 @@ class Uri
         size_t i, j;
         _port = port;
         _rawUri = uri;
+        
         /* 
          * Scheme
          */
         i = uri.indexOf("://");
         if(i != -1)  
         {
-            switch( uri[0 .. i] )
+            _rawscheme = uri[0 .. i];
+            switch( _rawscheme )
             {
                 case "http":
                     _scheme = Scheme.Http;
@@ -227,28 +232,32 @@ class Uri
         else
         {
             _scheme = Scheme.Unknown;
-            i = uri.indexOf(":");
+            //i = uri.indexOf(":");
         }
         
         /* 
          * Username and Password
-         */ 
-        i = uri.indexOf("@");
-        if(i != -1) 
+         */
+        j = uri.indexOf("/");
+        if(j != -1)
         {
-            j = uri[0..i+1].indexOf(":");
-            
-            if(j != -1) 
+            i = uri[0..j].indexOf("@");
+            if(i != -1) 
             {
-                _user = uri[0 .. j];
-                _password = uri[j+1 .. i];
-            } 
-            else 
-            {
-                _user = uri[0 .. i];
+                j = uri[0..i+1].indexOf(":");
+                
+                if(j != -1) 
+                {
+                    _user = uri[0 .. j];
+                    _password = uri[j+1 .. i];
+                } 
+                else 
+                {
+                    _user = uri[0 .. i];
+                }
+                
+                uri = uri[i+1 .. $]; 
             }
-            
-            uri = uri[i+1 .. $]; 
         }
         
         /* 
@@ -458,6 +467,14 @@ class Uri
     }
     
     /**
+     * Returns: Raw scheme
+     */
+    @property string rawscheme() const
+    {
+        return _rawscheme;
+    }
+    
+    /**
      * Returns: Uri domain
      */    
     @property string domain() const
@@ -483,6 +500,9 @@ class Uri
         return this;
     }
     
+    /**
+     * Returns: raw Uri
+     */
     @property string rawUri() const
     {
         return _rawUri;
@@ -536,6 +556,7 @@ class Uri
     {
         return _password;
     }
+    
     
     @property Uri password(string pass)
     {
@@ -596,6 +617,7 @@ class Uri
         return std.uri.encode(uri);
     }
     
+    
     static string decode(string uri)
     {
         return std.uri.decode(uri);
@@ -603,13 +625,12 @@ class Uri
 }
 
 unittest
-{
+{   
     auto uri = new Uri("http://user:pass@domain.com:80/path/a?q=query#fragment");
     
     assert(uri.scheme() == uri.Http);
     assert(uri.scheme() == uri.Scheme.Http);
     assert(uri.scheme() == Uri.Scheme.Http);
-    assert(uri.scheme() == Uri.Http);
     
     assert(uri.host == "domain.com");
     assert(uri.port == 80);
@@ -650,4 +671,8 @@ unittest
     query.add(QueryParam("key", "value"));
     query.add(QueryParam("key1" ,"value1"));
     assert(query.length() == 2);
+    
+    uri = Uri.parseUri("http://test.com/mail/user@page.com");
+    assert(uri.path == "/mail/user@page.com");
+    assert(uri.rawscheme == "http");
 }
