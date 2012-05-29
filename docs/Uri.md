@@ -48,10 +48,10 @@ URI is even used for e-mails:
     username@example.com
     
 Now, when you know a bit about URI, we can continue to class usage. 
-First you have to import `std.net.uri`, then you just have to create `new Uri` class. Here's example:
+First you have to import `netd.uri`, then you just have to create `new Uri` class. Here's example:
 
 ```D
-import std.net.uri;
+import netd.uri;
 
 void main()
 {
@@ -66,7 +66,7 @@ Also `Uri.parseUri` calls Uri constructor. Now we have parsed Uri,
 we can get it's components easy. For example, to get Uri scheme use `uri.scheme`:
 
 ```D
-import std.net.uri;
+import netd.uri;
 import std.stdio;
 
 void main()
